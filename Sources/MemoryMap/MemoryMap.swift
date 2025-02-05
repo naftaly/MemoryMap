@@ -78,6 +78,16 @@ public class MemoryMap<T>: @unchecked Sendable {
         }
     }
     
+    /// Provides temporary thread-safe read/write access to the mapped data.
+    ///
+    /// This property allows reading and writing of the POD struct `T`.
+    /// Changes are immediately reflected in the memory-mapped file.
+    public func get<R>(_ body: (inout UnsafeMutablePointer<T>.Pointee) throws -> R) rethrows -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body(&self._s.pointee)
+    }
+    
     // MARK: - private
     
     deinit {

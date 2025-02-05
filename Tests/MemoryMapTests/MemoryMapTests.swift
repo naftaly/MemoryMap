@@ -20,6 +20,32 @@ final class MemoryMapTests: XCTestCase {
         try? FileManager.default.removeItem(at: url)
     }
     
+    func testWriteCloseVerifyBlock() throws {
+        
+        var map: MemoryMap<MemoryMapTestPOD>? = try? MemoryMap(fileURL: url)
+        XCTAssertNotNil(map)
+        
+        XCTAssertEqual(map?.get { $0.state }, 0)
+        XCTAssertEqual(map?.get { $0.ok }, false)
+        XCTAssertEqual(map?.get { $0.size }, 0)
+        
+        map?.get { $0.state = 10 }
+        map?.get { $0.ok = true }
+        map?.get { $0.size = 50 }
+        
+        XCTAssertEqual(map?.get { $0.state }, 10)
+        XCTAssertEqual(map?.get { $0.ok }, true)
+        XCTAssertEqual(map?.get { $0.size }, 50)
+        
+        map = try? MemoryMap(fileURL: url)
+        XCTAssertNotNil(map)
+        
+        XCTAssertEqual(map?.get { $0.state }, 10)
+        XCTAssertEqual(map?.get { $0.ok }, true)
+        XCTAssertEqual(map?.get { $0.size }, 50)
+        
+    }
+    
     func testWriteCloseVerify() throws {
         
         var map: MemoryMap<MemoryMapTestPOD>? = try? MemoryMap(fileURL: url)
