@@ -318,7 +318,7 @@ extension KeyValueStore {
             "Capacity must be a power of two"
         )
         let hash1 = key.hashKey
-        let step = key.hash2
+        let step = key.hash2(from: hash1)
         let startIndex = hash1 & (KeyValueStoreDefaultCapacity - 1)
         var index = startIndex
         var probeCount = 0
@@ -410,7 +410,7 @@ extension KeyValueStore {
         // Reinsert all entries with fresh hash positions using double hashing
         for (key, value) in activeEntries {
             let hash1 = key.hashKey
-            let step = key.hash2
+            let step = key.hash2(from: hash1)
             var index = hash1 & (KeyValueStoreDefaultCapacity - 1)
             var probeCount = 0
 
@@ -596,11 +596,10 @@ struct KeyStorage: @unchecked Sendable, Equatable {
         }
     }
 
-    var hash2: Int {
-        // Derive second hash from first hash (much faster than computing separately)
-        // Use bit mixing to create independent distribution
-        // Must be odd (coprime with capacity=128) and never zero
-        let h1 = hashKey
+    /// Derive second hash from first hash (much faster than computing separately)
+    /// Use bit mixing to create independent distribution
+    /// Must be odd (coprime with capacity=128) and never zero
+    func hash2(from h1: Int) -> Int {
         // Mix bits: rotate and XOR to decorrelate from hash1
         let mixed = ((h1 >> 17) ^ (h1 << 15)) &+ (h1 >> 7)
         // Ensure odd by setting lowest bit

@@ -21,7 +21,6 @@
 /// SOFTWARE.
 
 import Foundation
-import os
 
 /// MemoryMap is a utility class that backs a Plain Old Data (POD) struct
 /// with a memory-mapped file. This enables efficient persistence and
