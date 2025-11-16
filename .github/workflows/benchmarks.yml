@@ -28,7 +28,7 @@ jobs:
       id: benchmark
       run: |
         echo "Running benchmarks..."
-        swift test 2>&1 | tee benchmark_output.txt
+        swift test --filter testPerformance 2>&1 | tee benchmark_output.txt
 
     - name: Parse and format results
       run: |
@@ -41,80 +41,124 @@ jobs:
             content = f.read()
 
         # Find all performance test results
-        pattern = r"testPerformance(\w+).*?average: ([\d.]+).*?relative standard deviation: ([\d.]+)%"
+        pattern = r"testPerformance(\w+).*?average: ([\d.]+)"
         matches = re.findall(pattern, content)
 
         # Start markdown output
-        output = ["## Performance Analysis\n"]
-        output.append("| Operation | Total Time | Operations | **Per-Op Time** | Main Thread Safe? |")
-        output.append("|-----------|-----------|-----------|-----------------|-------------------|")
+        output = ["# 🚀 KeyValueStore Performance Benchmarks\n"]
+        output.append("*Optimized with double hashing, memcmp equality, and derived hash2*\n")
 
-        # Define operation counts and special handling
-        op_counts = {
-            "Insert": 100,
-            "LookupHit": 100,
-            "LookupMiss": 100,
-            "Update": 100,
-            "Remove": 200,  # 100 inserts + 100 removes
-            "Count": 100,
-            "Keys": 1,
-            "ToDictionary": 1,
-            "MixedOperations": 136  # 50+50+25+10+1+1
+        # Core operations section
+        output.append("## Core Operations (100 ops)\n")
+        output.append("| Operation | Time | Per-Op | Main Thread |")
+        output.append("|-----------|------|--------|-------------|")
+
+        core_ops = {
+            "Insert": ("Insert", 100),
+            "LookupHit": ("Lookup (hit)", 100),
+            "LookupMiss": ("Lookup (miss)", 100),
+            "Update": ("Update", 100),
+            "Remove": ("Remove", 200),
+            "Contains": ("Contains", 100),
         }
 
-        op_names = {
-            "Insert": "Insert",
-            "LookupHit": "Lookup (hit)",
-            "LookupMiss": "Lookup (miss)",
-            "Update": "Update",
-            "Remove": "Remove",
-            "Count": "Count",
-            "Keys": "Keys (100 items)",
-            "ToDictionary": "toDictionary (100)",
-            "MixedOperations": "Mixed Operations"
+        for test_name, avg_time in matches:
+            if test_name in core_ops:
+                avg_time_f = float(avg_time)
+                op_name, ops = core_ops[test_name]
+
+                total_ms = avg_time_f * 1000
+                per_op_us = (avg_time_f * 1_000_000) / ops
+
+                if per_op_us < 1:
+                    per_op = "<1 μs"
+                elif per_op_us < 1000:
+                    per_op = f"{per_op_us:.1f} μs"
+                else:
+                    per_op = f"{per_op_us/1000:.2f} ms"
+
+                if total_ms < 10:
+                    status = "✅ Excellent"
+                elif total_ms < 50:
+                    status = "✅ Good"
+                elif total_ms < 100:
+                    status = "⚠️ OK"
+                else:
+                    status = "❌ Review"
+
+                output.append(f"| {op_name} | {total_ms:.1f}ms | {per_op} | {status} |")
+
+        # Load factor performance
+        output.append("\n## Load Factor Performance (10,000 lookups)\n")
+        output.append("| Load % | Time | Degradation | Status |")
+        output.append("|--------|------|-------------|--------|")
+
+        load_factors = {
+            "LoadFactor25Percent": ("25%", None),
+            "LoadFactor50Percent": ("50%", None),
+            "LoadFactor75Percent": ("75%", None),
+            "LoadFactor90Percent": ("90%", None),
+            "LoadFactor99Percent": ("99%", None),
         }
 
-        for test_name, avg_time, std_dev in matches:
-            avg_time_f = float(avg_time)
-            total_time = f"{avg_time_f * 1000:.1f}ms"
+        baseline = None
+        for test_name, avg_time in matches:
+            if test_name in load_factors:
+                avg_time_f = float(avg_time)
+                load_name = load_factors[test_name][0]
 
-            ops = op_counts.get(test_name, 1)
-            op_name = op_names.get(test_name, test_name)
+                if baseline is None:
+                    baseline = avg_time_f
+                    degradation = "baseline"
+                else:
+                    ratio = avg_time_f / baseline
+                    degradation = f"{ratio:.1f}x"
 
-            # Calculate per-operation time
-            per_op_us = (avg_time_f * 1_000_000) / ops
+                total_ms = avg_time_f * 1000
 
-            if per_op_us < 1:
-                per_op = f"**<1 μs**"
-            elif per_op_us < 1000:
-                per_op = f"**{per_op_us:.0f} μs**"
-            else:
-                per_op = f"**{per_op_us/1000:.1f} ms**"
+                if avg_time_f < 0.050:
+                    status = "✅ Excellent"
+                elif avg_time_f < 0.100:
+                    status = "✅ Good"
+                elif avg_time_f < 0.150:
+                    status = "⚠️ OK"
+                else:
+                    status = "❌ Slow"
 
-            # Main thread safety (16.67ms budget for 60fps)
-            if per_op_us < 100:
-                main_thread = "✅ Excellent"
-            elif per_op_us < 1000:
-                main_thread = "✅ Good"
-            elif per_op_us < 5000:
-                main_thread = "⚠️ OK"
-            else:
-                main_thread = "❌ Slow"
+                output.append(f"| {load_name} | {total_ms:.0f}ms | {degradation} | {status} |")
 
-            output.append(f"| {op_name} | {total_time} | {ops} | {per_op} | {main_thread} |")
+        # Key length impact
+        output.append("\n## Key Length Impact (100 ops)\n")
+        output.append("| Key Length | Time | Per-Op |")
+        output.append("|------------|------|--------|")
 
-        # Add main thread budget info
-        output.append("")
-        output.append("### Main Thread Budget")
-        output.append("For smooth 60fps: **16.67ms per frame**")
-        output.append("For ProMotion 120fps: **8.33ms per frame**")
-        output.append("")
+        key_tests = {
+            "ShortKeys": "Short (2-3 chars)",
+            "MediumKeys": "Medium (~25 chars)",
+            "LongKeys": "Long (64 chars)",
+        }
 
-        # Add footer
+        for test_name, avg_time in matches:
+            if test_name in key_tests:
+                avg_time_f = float(avg_time)
+                key_name = key_tests[test_name]
+
+                total_ms = avg_time_f * 1000
+                per_op_us = (avg_time_f * 1_000_000) / 100
+
+                output.append(f"| {key_name} | {total_ms:.1f}ms | {per_op_us:.1f} μs |")
+
+        # Main thread budget
+        output.append("\n## Main Thread Guidelines")
+        output.append("- ✅ **Excellent**: <10ms - Perfect for UI interactions")
+        output.append("- ✅ **Good**: 10-50ms - Acceptable for most operations")
+        output.append("- ⚠️ **OK**: 50-100ms - Use with caution on main thread")
+        output.append("- ❌ **Review**: >100ms - Consider background thread")
+        output.append("\n*Target: 16.67ms per frame @ 60fps, 8.33ms @ 120fps*")
+
+        # Summary
         total_tests = len(re.findall(r"Test Case.*passed", content))
-        output.append(f"**Total tests:** {total_tests} passed")
-        output.append("")
-        output.append(f"_Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_")
+        output.append(f"\n---\n**Total tests:** {total_tests} passed | _Generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_")
 
         # Write to file
         with open('benchmark_results.md', 'w') as f:
