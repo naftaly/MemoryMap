@@ -59,7 +59,7 @@ public class MemoryMap<T>: @unchecked Sendable {
         }
     }
 
-    /// Provides atomic access to the mapped data.
+    /// Provides atomic access to the mapped structure.
     ///
     /// This property allows reading and writing of the POD struct `T`.
     /// Changes are immediately reflected in the memory-mapped file.
@@ -89,6 +89,18 @@ public class MemoryMap<T>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return try body(&_s.pointee)
+    }
+
+    /// Provides temporary unsafe read/write access to the mapped data.
+    ///
+    /// This method does not acquire a lock and should be used with caution.
+    /// Changes are immediately reflected in the memory-mapped file.
+    ///
+    /// - Parameter body: A closure that receives mutable access to the storage
+    /// - Returns: The value returned by the closure
+    /// - Throws: Rethrows any error thrown by the closure
+    public func withUnsafeStorage<R>(_ body: (inout UnsafeMutablePointer<T>.Pointee) throws -> R) rethrows -> R {
+        try body(&_s.pointee)
     }
 
     /// Provides temporary thread-safe read/write access to the mapped data.
