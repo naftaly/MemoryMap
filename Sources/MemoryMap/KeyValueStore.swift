@@ -73,6 +73,7 @@ public let KeyValueStoreDefaultMaxValueSize = 1024
 ///     print("Key: \(key)")
 /// }
 /// ```
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public class KeyValueStore<Value>: @unchecked Sendable {
     /// A validated string key for KeyValueStore.
     ///
@@ -243,6 +244,7 @@ public class KeyValueStore<Value>: @unchecked Sendable {
 
 // MARK: - String Convenience API
 
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public extension KeyValueStore {
     /// Accesses the value associated with the given key for reading and writing.
     ///
@@ -289,6 +291,7 @@ public extension KeyValueStore {
 
 // MARK: - ExpressibleByStringLiteral
 
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 extension KeyValueStore.Key: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         // String literals are compile-time constants
@@ -318,7 +321,7 @@ extension KeyValueStore {
             "Capacity must be a power of two"
         )
         let hash1 = key.hashKey
-        let step = key.hash2
+        let step = key.hash2(from: hash1)
         let startIndex = hash1 & (KeyValueStoreDefaultCapacity - 1)
         var index = startIndex
         var probeCount = 0
@@ -410,7 +413,7 @@ extension KeyValueStore {
         // Reinsert all entries with fresh hash positions using double hashing
         for (key, value) in activeEntries {
             let hash1 = key.hashKey
-            let step = key.hash2
+            let step = key.hash2(from: hash1)
             var index = hash1 & (KeyValueStoreDefaultCapacity - 1)
             var probeCount = 0
 
@@ -596,11 +599,10 @@ struct KeyStorage: @unchecked Sendable, Equatable {
         }
     }
 
-    var hash2: Int {
-        // Derive second hash from first hash (much faster than computing separately)
-        // Use bit mixing to create independent distribution
-        // Must be odd (coprime with capacity=128) and never zero
-        let h1 = hashKey
+    /// Derive second hash from first hash (much faster than computing separately)
+    /// Use bit mixing to create independent distribution
+    /// Must be odd (coprime with capacity=128) and never zero
+    func hash2(from h1: Int) -> Int {
         // Mix bits: rotate and XOR to decorrelate from hash1
         let mixed = ((h1 >> 17) ^ (h1 << 15)) &+ (h1 >> 7)
         // Ensure odd by setting lowest bit

@@ -26,6 +26,7 @@ import os
 /// MemoryMap is a utility class that backs a Plain Old Data (POD) struct
 /// with a memory-mapped file. This enables efficient persistence and
 /// crash-resilient storage, with thread-safe access.
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public class MemoryMap<T>: @unchecked Sendable {
     /// The URL of the memory-mapped file.
     public let url: URL
@@ -200,7 +201,7 @@ public class MemoryMap<T>: @unchecked Sendable {
         var _s: T
     }
 
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private let container: UnsafeMutablePointer<MemoryMapContainer>
     private let _s: UnsafeMutablePointer<T>
 }
