@@ -77,6 +77,105 @@ final class KeyValueStoreTests: XCTestCase {
         XCTAssertNil(removed)
     }
 
+    // MARK: - Deletion with Probe Chains
+
+    func testDeletionWithProbeChain() throws {
+        struct TestValue {
+            var value: Int
+        }
+
+        // Use very small capacity to force hash collisions
+        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 4)
+
+        // Insert keys that will create a probe chain
+        // With capacity 4, we're almost guaranteed collisions
+        store["a"] = TestValue(value: 1)
+        store["b"] = TestValue(value: 2)
+        store["c"] = TestValue(value: 3)
+        store["d"] = TestValue(value: 4)
+
+        // Verify all keys are accessible before deletion
+        XCTAssertEqual(store["a"]?.value, 1)
+        XCTAssertEqual(store["b"]?.value, 2)
+        XCTAssertEqual(store["c"]?.value, 3)
+        XCTAssertEqual(store["d"]?.value, 4)
+
+        // Remove the first key
+        let removed = store.removeValue(forKey: "a")
+        XCTAssertEqual(removed?.value, 1)
+        XCTAssertNil(store["a"], "Removed key should not be found")
+
+        // CRITICAL: These lookups should still work!
+        // If deletion just marks as unoccupied without rehashing,
+        // any keys that were in the probe chain after the deleted key
+        // will become unreachable because the probe chain is broken.
+        XCTAssertEqual(store["b"]?.value, 2, "key b should still be accessible after deleting a")
+        XCTAssertEqual(store["c"]?.value, 3, "key c should still be accessible after deleting a")
+        XCTAssertEqual(store["d"]?.value, 4, "key d should still be accessible after deleting a")
+
+        // Try removing another and verify remaining keys
+        store.removeValue(forKey: "c")
+        XCTAssertEqual(store["b"]?.value, 2, "key b should still be accessible after deleting c")
+        XCTAssertEqual(store["d"]?.value, 4, "key d should still be accessible after deleting c")
+
+        // Verify count is correct
+        XCTAssertEqual(store.count, 2, "Count should be 2 after removing 2 keys")
+    }
+
+    func testDeletionBreaksProbeChainScenario() throws {
+        struct TestValue {
+            var value: Int
+        }
+
+        // Capacity 3 - very small to force collisions
+        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 3)
+
+        // Fill all slots to guarantee a probe chain exists
+        store["x"] = TestValue(value: 10)
+        store["y"] = TestValue(value: 20)
+        store["z"] = TestValue(value: 30)
+
+        // Verify all are accessible
+        XCTAssertEqual(store["x"]?.value, 10)
+        XCTAssertEqual(store["y"]?.value, 20)
+        XCTAssertEqual(store["z"]?.value, 30)
+
+        // Remove middle element (most likely to break chain)
+        store.removeValue(forKey: "y")
+
+        // CRITICAL: x and z should still be findable
+        XCTAssertEqual(store["x"]?.value, 10, "x should be findable after removing y")
+        XCTAssertEqual(store["z"]?.value, 30, "z should be findable after removing y")
+        XCTAssertNil(store["y"], "y should not be findable after removal")
+    }
+
+    func testDeletionAndReinsertion() throws {
+        struct TestValue {
+            var value: Int
+        }
+
+        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 10)
+
+        // Create a probe chain scenario
+        store["a"] = TestValue(value: 1)
+        store["b"] = TestValue(value: 2)
+        store["c"] = TestValue(value: 3)
+
+        // Remove middle element
+        store.removeValue(forKey: "b")
+
+        // Reinsert with different value
+        store["b"] = TestValue(value: 20)
+
+        // All should be accessible
+        XCTAssertEqual(store["a"]?.value, 1)
+        XCTAssertEqual(store["b"]?.value, 20)
+        XCTAssertEqual(store["c"]?.value, 3)
+
+        // Count should be correct
+        XCTAssertEqual(store.count, 3)
+    }
+
     func testContains() throws {
         struct TestValue {
             var value: Int

@@ -45,7 +45,7 @@ jobs:
         matches = re.findall(pattern, content)
 
         # Start markdown output
-        output = ["## Benchmark Results\n"]
+        output = ["## Key Value Store Benchmarks\n"]
         output.append("| Benchmark | Avg Time (ms) | Per Op (μs) | Std Dev |")
         output.append("|-----------|---------------|-------------|---------|")
 
