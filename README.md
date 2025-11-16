@@ -3,14 +3,19 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org/)
-[![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20macOS%20%7C%20tvOS%20%7C%20watchOS%20%7C%20visionOS-lightgrey.svg)]()
+[![Platform](https://img.shields.io/badge/platform-iOS%2016%2B%20%7C%20macOS%2013%2B%20%7C%20tvOS%2016%2B%20%7C%20watchOS%209%2B%20%7C%20visionOS%202%2B-lightgrey.svg)]()
 
 MemoryMap is a Swift utility class designed for efficient persistence and crash-resilient storage of Plain Old Data (POD) structs using memory-mapped files. It provides thread-safe access to the stored data, ensuring integrity and performance for applications requiring low-latency storage solutions.
+
+## Requirements
+
+- Swift 6.0+
+- macOS 13.0+ / iOS 16.0+ / tvOS 16.0+ / watchOS 9.0+ / visionOS 2.0+
 
 ## Features
 
 - **Memory-mapped file support**: Back a POD struct with a memory-mapped file for direct memory access
-- **Thread-safe access**: Read and write operations protected by NSLock
+- **Thread-safe access**: Read and write operations protected by OSAllocatedUnfairLock for optimal performance
 - **Crash resilience**: Changes immediately reflected in the memory-mapped file
 - **Data integrity validation**: File validation using magic numbers
 - **KeyValueStore**: High-performance hash table with Dictionary-like API (10-20μs per operation)
@@ -94,6 +99,8 @@ let dict = store.dictionaryRepresentation()
 
 KeyValueStore uses **double hashing** with optimized comparisons for excellent main-thread performance:
 
+**Test Hardware:** Apple M3, 24 GB RAM
+
 | Operation | Time (100 ops) | Per-Op | Main Thread |
 |-----------|----------------|--------|-------------|
 | Insert | 1.0ms | 10 μs | ✅ Excellent |
@@ -103,10 +110,10 @@ KeyValueStore uses **double hashing** with optimized comparisons for excellent m
 | Remove | 3.0ms | 15 μs | ✅ Excellent |
 
 **Load Factor Performance:**
-- 25% load: 17ms (baseline)
-- 50% load: 35ms (2.1x)
-- 75% load: 57ms (3.4x)
-- 99% load: 106ms (6.2x) ⚠️
+- 25% load: 15ms (baseline)
+- 50% load: 31ms (2.1x)
+- 75% load: 53ms (3.5x)
+- 99% load: 97ms (6.5x) ⚠️
 
 **Main Thread Budget:**
 - 60fps: 16.67ms per frame

@@ -73,6 +73,7 @@ public let KeyValueStoreDefaultMaxValueSize = 1024
 ///     print("Key: \(key)")
 /// }
 /// ```
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public class KeyValueStore<Value>: @unchecked Sendable {
     /// A validated string key for KeyValueStore.
     ///
@@ -243,6 +244,7 @@ public class KeyValueStore<Value>: @unchecked Sendable {
 
 // MARK: - String Convenience API
 
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public extension KeyValueStore {
     /// Accesses the value associated with the given key for reading and writing.
     ///
@@ -289,6 +291,7 @@ public extension KeyValueStore {
 
 // MARK: - ExpressibleByStringLiteral
 
+@available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 extension KeyValueStore.Key: ExpressibleByStringLiteral {
     public init(stringLiteral value: String) {
         // String literals are compile-time constants
