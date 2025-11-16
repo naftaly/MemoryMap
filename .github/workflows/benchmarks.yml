@@ -45,25 +45,73 @@ jobs:
         matches = re.findall(pattern, content)
 
         # Start markdown output
-        output = ["## Key Value Store Benchmarks\n"]
-        output.append("| Benchmark | Avg Time (ms) | Per Op (μs) | Std Dev |")
-        output.append("|-----------|---------------|-------------|---------|")
+        output = ["## Performance Analysis\n"]
+        output.append("| Operation | Total Time | Operations | **Per-Op Time** | Main Thread Safe? |")
+        output.append("|-----------|-----------|-----------|-----------------|-------------------|")
+
+        # Define operation counts and special handling
+        op_counts = {
+            "Insert": 100,
+            "LookupHit": 100,
+            "LookupMiss": 100,
+            "Update": 100,
+            "Remove": 200,  # 100 inserts + 100 removes
+            "Count": 100,
+            "Keys": 1,
+            "ToDictionary": 1,
+            "MixedOperations": 136  # 50+50+25+10+1+1
+        }
+
+        op_names = {
+            "Insert": "Insert",
+            "LookupHit": "Lookup (hit)",
+            "LookupMiss": "Lookup (miss)",
+            "Update": "Update",
+            "Remove": "Remove",
+            "Count": "Count",
+            "Keys": "Keys (100 items)",
+            "ToDictionary": "toDictionary (100)",
+            "MixedOperations": "Mixed Operations"
+        }
 
         for test_name, avg_time, std_dev in matches:
-            avg_ms = float(avg_time) * 1000
+            avg_time_f = float(avg_time)
+            total_time = f"{avg_time_f * 1000:.1f}ms"
 
-            # Calculate per-op for tests with 100 operations
-            if test_name in ["Count", "Keys", "ToDictionary", "MixedOperations"]:
-                per_op = "-"
+            ops = op_counts.get(test_name, 1)
+            op_name = op_names.get(test_name, test_name)
+
+            # Calculate per-operation time
+            per_op_us = (avg_time_f * 1_000_000) / ops
+
+            if per_op_us < 1:
+                per_op = f"**<1 μs**"
+            elif per_op_us < 1000:
+                per_op = f"**{per_op_us:.0f} μs**"
             else:
-                per_op_us = float(avg_time) * 10000  # 100 ops
-                per_op = f"{per_op_us:.1f}"
+                per_op = f"**{per_op_us/1000:.1f} ms**"
 
-            output.append(f"| **{test_name}** | {avg_ms:.2f} | {per_op} | {std_dev}% |")
+            # Main thread safety (16.67ms budget for 60fps)
+            if per_op_us < 100:
+                main_thread = "✅ Excellent"
+            elif per_op_us < 1000:
+                main_thread = "✅ Good"
+            elif per_op_us < 5000:
+                main_thread = "⚠️ OK"
+            else:
+                main_thread = "❌ Slow"
+
+            output.append(f"| {op_name} | {total_time} | {ops} | {per_op} | {main_thread} |")
+
+        # Add main thread budget info
+        output.append("")
+        output.append("### Main Thread Budget")
+        output.append("For smooth 60fps: **16.67ms per frame**")
+        output.append("For ProMotion 120fps: **8.33ms per frame**")
+        output.append("")
 
         # Add footer
         total_tests = len(re.findall(r"Test Case.*passed", content))
-        output.append("")
         output.append(f"**Total tests:** {total_tests} passed")
         output.append("")
         output.append(f"_Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_")

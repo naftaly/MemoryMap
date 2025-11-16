@@ -158,26 +158,7 @@ public class KeyValueStore<Value> {
     /// - Throws: `KeyValueStoreError.keyTooLong` if key exceeds max length
     ///           `KeyValueStoreError.storeFull` if capacity is reached
     public func set(_ key: String, _ value: Value) throws {
-        let keyArray = try stringToKeyArray(key)
-
-        try memoryMap.get { storage in
-            switch self.probeSlot(for: keyArray, in: &storage) {
-            case .found(let index):
-                var updatedEntry = self.getEntry(from: &storage, at: index)
-                updatedEntry.value = value
-                self.setEntry(in: &storage, at: index, entry: updatedEntry)
-            case .available(let index):
-                self.setEntry(in: &storage, at: index, entry: KeyValueEntry(
-                    key: keyArray,
-                    value: value,
-                    occupied: true,
-                    tombstone: false
-                ))
-                storage.count += 1
-            case .full:
-                throw KeyValueStoreError.storeFull
-            }
-        }
+        _ = try setValueInternal(value, forKey: key)
     }
 
     /// Updates the value stored in the store for the given key, or adds a new key-value pair if the key does not exist.
@@ -190,30 +171,7 @@ public class KeyValueStore<Value> {
     ///           `KeyValueStoreError.storeFull` if capacity is reached
     @discardableResult
     public func updateValue(_ value: Value, forKey key: String) throws -> Value? {
-        let keyArray = try stringToKeyArray(key)
-
-        return try memoryMap.get { storage in
-            switch self.probeSlot(for: keyArray, in: &storage) {
-            case .found(let index):
-                let entry = self.getEntry(from: &storage, at: index)
-                let oldValue = entry.value
-                var updatedEntry = entry
-                updatedEntry.value = value
-                self.setEntry(in: &storage, at: index, entry: updatedEntry)
-                return oldValue
-            case .available(let index):
-                self.setEntry(in: &storage, at: index, entry: KeyValueEntry(
-                    key: keyArray,
-                    value: value,
-                    occupied: true,
-                    tombstone: false
-                ))
-                storage.count += 1
-                return nil
-            case .full:
-                throw KeyValueStoreError.storeFull
-            }
-        }
+        return try setValueInternal(value, forKey: key)
     }
 
     /// Removes the given key and its associated value from the store.
@@ -231,11 +189,11 @@ public class KeyValueStore<Value> {
                 return nil
             }
 
-            var entry = self.getEntry(from: &storage, at: index)
+            var entry = storage.entries[index]
             let oldValue = entry.value
             entry.occupied = false
             entry.tombstone = true
-            self.setEntry(in: &storage, at: index, entry: entry)
+            storage.entries[index] = entry
             storage.count -= 1
             return oldValue
         }
@@ -246,7 +204,16 @@ public class KeyValueStore<Value> {
     /// - Parameter key: The key to check
     /// - Returns: true if the key exists, false otherwise
     public func contains(_ key: String) -> Bool {
-        return self[key] != nil
+        guard let keyArray = try? stringToKeyArray(key) else {
+            return false
+        }
+
+        return memoryMap.get { storage in
+            if case .found = self.probeSlot(for: keyArray, in: &storage) {
+                return true
+            }
+            return false
+        }
     }
 
     /// Removes all entries from the store.
@@ -276,14 +243,40 @@ public class KeyValueStore<Value> {
 
     // MARK: - Private Helpers
 
+    private func setValueInternal(_ value: Value, forKey key: String) throws -> Value? {
+        let keyArray = try stringToKeyArray(key)
+
+        return try memoryMap.get { storage in
+            switch self.probeSlot(for: keyArray, in: &storage) {
+            case .found(let index):
+                let oldValue = storage.entries[index].value
+                var updatedEntry = storage.entries[index]
+                updatedEntry.value = value
+                storage.entries[index] = updatedEntry
+                return oldValue
+            case .available(let index):
+                storage.entries[index] = KeyValueEntry(
+                    key: keyArray,
+                    value: value,
+                    occupied: true,
+                    tombstone: false
+                )
+                storage.count += 1
+                return nil
+            case .full:
+                throw KeyValueStoreError.storeFull
+            }
+        }
+    }
+
     private func stringToKeyArray(_ key: String) throws -> KeyValueStoreKey {
         guard let keyBytes = key.data(using: .utf8), keyBytes.count <= KeyValueStoreMaxKeyLength else {
             throw KeyValueStoreError.keyTooLong
         }
         var keyArray = KeyValueStoreKey()
         keyArray.length = UInt8(keyBytes.count)
-        for i in 0..<keyBytes.count {
-            keyArray[i] = Int8(bitPattern: keyBytes[i])
+        keyBytes.enumerated().forEach { i, byte in
+            keyArray[i] = Int8(bitPattern: byte)
         }
         return keyArray
     }
@@ -297,23 +290,15 @@ public class KeyValueStore<Value> {
             guard case let .found(index) = self.probeSlot(for: keyArray, in: &storage) else {
                 return nil
             }
-            let entry = self.getEntry(from: &storage, at: index)
+            let entry = storage.entries[index]
             return entry.value
         }
-    }
-
-    private func getEntry(from storage: inout KeyValueStoreStorage<Value>, at index: Int) -> KeyValueEntry<Value> {
-        return storage.entries[index]
-    }
-
-    private func setEntry(in storage: inout KeyValueStoreStorage<Value>, at index: Int, entry: KeyValueEntry<Value>) {
-        storage.entries[index] = entry
     }
 
     private func hashKey(_ key: KeyValueStoreKey) -> Int {
         // djb2 hash algorithm
         var hash = 5381
-        let length = self.keyLength(key)
+        let length = Int(key.length)
         for i in 0..<length {
             let byte = key[i]
             hash = ((hash << 5) &+ hash) &+ Int(byte)
@@ -323,33 +308,19 @@ public class KeyValueStore<Value> {
     }
 
     private func keysEqual(_ key1: KeyValueStoreKey, _ key2: KeyValueStoreKey) -> Bool {
-        let length1 = self.keyLength(key1)
-        let length2 = self.keyLength(key2)
-        guard length1 == length2 else {
+        guard key1.length == key2.length else {
             return false
         }
-        for i in 0..<length1 {
-            if key1[i] != key2[i] {
-                return false
-            }
-        }
-        return true
+        return (0..<Int(key1.length)).allSatisfy { key1[$0] == key2[$0] }
     }
 
     private func keyToString(_ key: KeyValueStoreKey) -> String? {
-        let length = self.keyLength(key)
+        let length = Int(key.length)
         guard length <= KeyValueStoreMaxKeyLength else {
             return nil
         }
-        var data = Data(count: length)
-        for i in 0..<length {
-            data[i] = UInt8(bitPattern: key[i])
-        }
+        let data = Data((0..<length).map { i in UInt8(bitPattern: key[i]) })
         return String(data: data, encoding: .utf8)
-    }
-
-    private func keyLength(_ key: KeyValueStoreKey) -> Int {
-        return Int(key.length)
     }
 
     private func probeSlot(for key: KeyValueStoreKey, in storage: inout KeyValueStoreStorage<Value>) -> ProbeResult {
@@ -359,7 +330,7 @@ public class KeyValueStore<Value> {
         var firstTombstoneIndex: Int?
 
         while probeCount < KeyValueStoreDefaultCapacity {
-            let entry = self.getEntry(from: &storage, at: index)
+            let entry = storage.entries[index]
 
             if entry.occupied && !entry.tombstone {
                 if self.keysEqual(entry.key, key) {
@@ -386,7 +357,7 @@ public class KeyValueStore<Value> {
 
     private func forEachOccupiedEntry(in storage: inout KeyValueStoreStorage<Value>, _ body: (String, Value) -> Void) {
         for i in 0..<KeyValueStoreDefaultCapacity {
-            let entry = self.getEntry(from: &storage, at: i)
+            let entry = storage.entries[i]
             if entry.occupied && !entry.tombstone, let key = self.keyToString(entry.key) {
                 body(key, entry.value)
             }
