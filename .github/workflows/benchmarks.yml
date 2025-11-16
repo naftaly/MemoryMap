@@ -33,6 +33,16 @@ jobs:
         python3 << 'EOF'
         import re
         from datetime import datetime
+        import subprocess
+
+        # Get system info
+        try:
+            cpu_brand = subprocess.check_output(['sysctl', '-n', 'machdep.cpu.brand_string']).decode().strip()
+            mem_bytes = int(subprocess.check_output(['sysctl', '-n', 'hw.memsize']).decode().strip())
+            mem_gb = mem_bytes / (1024**3)
+            system_info = f"{cpu_brand}, {mem_gb:.0f} GB RAM"
+        except:
+            system_info = "macOS (GitHub Actions)"
 
         # Read benchmark output
         with open('benchmark_output.txt', 'r') as f:
@@ -45,6 +55,7 @@ jobs:
         # Start markdown output
         output = ["# 🚀 KeyValueStore Performance Benchmarks\n"]
         output.append("*Optimized with double hashing, memcmp equality, and derived hash2*\n")
+        output.append(f"**Test Hardware:** {system_info}\n")
 
         # Core operations section
         output.append("## Core Operations (100 ops)\n")
