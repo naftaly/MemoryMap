@@ -1,6 +1,6 @@
 /// MIT License
 ///
-/// Copyright (c) 2024 Alexander Cohen
+/// Copyright (c) 2025 Alexander Cohen
 ///
 /// Permission is hereby granted, free of charge, to any person obtaining a copy
 /// of this software and associated documentation files (the "Software"), to deal
@@ -57,7 +57,8 @@ public let KeyValueStoreDefaultMaxValueSize = 1024
 /// let count = store["user:456", default: MyValue(counter: 0, timestamp: 0)].counter
 ///
 /// // Update and get old value
-/// let oldValue = try store.updateValue(MyValue(counter: 2, timestamp: Date().timeIntervalSince1970), forKey: "user:123")
+/// let oldValue = try store.updateValue(MyValue(counter: 2, timestamp: Date().timeIntervalSince1970), forKey:
+/// "user:123")
 ///
 /// // Iterate over keys
 /// for key in store.keys {
@@ -70,32 +71,33 @@ public let KeyValueStoreDefaultMaxValueSize = 1024
 ///     print("Store is not empty")
 /// }
 /// ```
-@available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 public class KeyValueStore<Value> {
-
     private let memoryMap: MemoryMap<KeyValueStoreStorage<Value>>
 
     /// The URL of the memory-mapped file backing this store
     public var url: URL {
-        return memoryMap.url
+        memoryMap.url
     }
 
     /// The number of key-value pairs in the store
     public var count: Int {
-        return memoryMap.get { storage in
-            return storage.count
+        memoryMap.withLockedStorage { storage in
+            storage.count
         }
     }
 
     /// A Boolean value indicating whether the store is empty
     public var isEmpty: Bool {
-        return count == 0
+        memoryMap.withLockedStorage { storage in
+            storage.count == 0
+        }
     }
 
     /// A collection containing just the keys of the store
     public var keys: [String] {
-        return memoryMap.get { storage in
+        memoryMap.withLockedStorage { storage in
             var keys: [String] = []
+            keys.reserveCapacity(storage.count)
             self.forEachOccupiedEntry(in: &storage) { key, _ in
                 keys.append(key)
             }
@@ -116,13 +118,13 @@ public class KeyValueStore<Value> {
     ///   For throwing versions that report errors, use `set(_:_:)` or `updateValue(_:forKey:)`.
     public subscript(key: String) -> Value? {
         get {
-            return get(key)
+            get(key)
         }
         set {
             if let value = newValue {
-                _ = try? self.set(key, value)
+                _ = try? set(key, value)
             } else {
-                _ = self.removeValue(forKey: key)
+                _ = removeValue(forKey: key)
             }
         }
     }
@@ -143,7 +145,7 @@ public class KeyValueStore<Value> {
         guard MemoryLayout<Value>.stride <= KeyValueStoreDefaultMaxValueSize else {
             throw KeyValueStoreError.valueTooLarge
         }
-        self.memoryMap = try MemoryMap<KeyValueStoreStorage<Value>>(fileURL: fileURL)
+        memoryMap = try MemoryMap<KeyValueStoreStorage<Value>>(fileURL: fileURL)
     }
 
     /// Sets a value for the given key.
@@ -171,7 +173,7 @@ public class KeyValueStore<Value> {
     ///           `KeyValueStoreError.storeFull` if capacity is reached
     @discardableResult
     public func updateValue(_ value: Value, forKey key: String) throws -> Value? {
-        return try setValueInternal(value, forKey: key)
+        try setValueInternal(value, forKey: key)
     }
 
     /// Removes the given key and its associated value from the store.
@@ -184,7 +186,7 @@ public class KeyValueStore<Value> {
             return nil
         }
 
-        return memoryMap.get { storage in
+        return memoryMap.withLockedStorage { storage in
             guard case let .found(index) = self.probeSlot(for: keyArray, in: &storage) else {
                 return nil
             }
@@ -208,7 +210,7 @@ public class KeyValueStore<Value> {
             return false
         }
 
-        return memoryMap.get { storage in
+        return memoryMap.withLockedStorage { storage in
             if case .found = self.probeSlot(for: keyArray, in: &storage) {
                 return true
             }
@@ -218,7 +220,7 @@ public class KeyValueStore<Value> {
 
     /// Removes all entries from the store.
     public func removeAll() {
-        memoryMap.get { storage in
+        memoryMap.withLockedStorage { storage in
             storage.entries.reset()
             storage.count = 0
         }
@@ -231,7 +233,7 @@ public class KeyValueStore<Value> {
     ///
     /// - Returns: A Dictionary with all keys and values from the store
     public func toDictionary() -> [String: Value] {
-        return memoryMap.get { storage in
+        memoryMap.withLockedStorage { storage in
             var dict: [String: Value] = [:]
             dict.reserveCapacity(storage.count)
             self.forEachOccupiedEntry(in: &storage) { key, value in
@@ -246,15 +248,15 @@ public class KeyValueStore<Value> {
     private func setValueInternal(_ value: Value, forKey key: String) throws -> Value? {
         let keyArray = try stringToKeyArray(key)
 
-        return try memoryMap.get { storage in
+        return try memoryMap.withLockedStorage { storage in
             switch self.probeSlot(for: keyArray, in: &storage) {
-            case .found(let index):
+            case let .found(index):
                 let oldValue = storage.entries[index].value
                 var updatedEntry = storage.entries[index]
                 updatedEntry.value = value
                 storage.entries[index] = updatedEntry
                 return oldValue
-            case .available(let index):
+            case let .available(index):
                 storage.entries[index] = KeyValueEntry(
                     key: keyArray,
                     value: value,
@@ -275,7 +277,7 @@ public class KeyValueStore<Value> {
         }
         var keyArray = KeyValueStoreKey()
         keyArray.length = UInt8(keyBytes.count)
-        keyBytes.enumerated().forEach { i, byte in
+        for (i, byte) in keyBytes.enumerated() {
             keyArray[i] = Int8(bitPattern: byte)
         }
         return keyArray
@@ -286,7 +288,7 @@ public class KeyValueStore<Value> {
             return nil
         }
 
-        return memoryMap.get { storage in
+        return memoryMap.withLockedStorage { storage in
             guard case let .found(index) = self.probeSlot(for: keyArray, in: &storage) else {
                 return nil
             }
@@ -299,7 +301,7 @@ public class KeyValueStore<Value> {
         // djb2 hash algorithm
         var hash = 5381
         let length = Int(key.length)
-        for i in 0..<length {
+        for i in 0 ..< length {
             let byte = key[i]
             hash = ((hash << 5) &+ hash) &+ Int(byte)
         }
@@ -311,7 +313,7 @@ public class KeyValueStore<Value> {
         guard key1.length == key2.length else {
             return false
         }
-        return (0..<Int(key1.length)).allSatisfy { key1[$0] == key2[$0] }
+        return (0 ..< Int(key1.length)).allSatisfy { key1[$0] == key2[$0] }
     }
 
     private func keyToString(_ key: KeyValueStoreKey) -> String? {
@@ -319,13 +321,13 @@ public class KeyValueStore<Value> {
         guard length <= KeyValueStoreMaxKeyLength else {
             return nil
         }
-        let data = Data((0..<length).map { i in UInt8(bitPattern: key[i]) })
+        let data = Data((0 ..< length).map { i in UInt8(bitPattern: key[i]) })
         return String(data: data, encoding: .utf8)
     }
 
     private func probeSlot(for key: KeyValueStoreKey, in storage: inout KeyValueStoreStorage<Value>) -> ProbeResult {
-        let hash = self.hashKey(key)
-        var index = hash % KeyValueStoreDefaultCapacity
+        let hash = hashKey(key)
+        var index = hash & (KeyValueStoreDefaultCapacity - 1)
         var probeCount = 0
         var firstTombstoneIndex: Int?
 
@@ -333,7 +335,7 @@ public class KeyValueStore<Value> {
             let entry = storage.entries[index]
 
             if entry.occupied && !entry.tombstone {
-                if self.keysEqual(entry.key, key) {
+                if keysEqual(entry.key, key) {
                     return .found(index)
                 }
             } else if entry.tombstone {
@@ -344,7 +346,7 @@ public class KeyValueStore<Value> {
                 return .available(firstTombstoneIndex ?? index)
             }
 
-            index = (index + 1) % KeyValueStoreDefaultCapacity
+            index = (index + 1) & (KeyValueStoreDefaultCapacity - 1)
             probeCount += 1
         }
 
@@ -356,9 +358,9 @@ public class KeyValueStore<Value> {
     }
 
     private func forEachOccupiedEntry(in storage: inout KeyValueStoreStorage<Value>, _ body: (String, Value) -> Void) {
-        for i in 0..<KeyValueStoreDefaultCapacity {
+        for i in 0 ..< KeyValueStoreDefaultCapacity {
             let entry = storage.entries[i]
-            if entry.occupied && !entry.tombstone, let key = self.keyToString(entry.key) {
+            if entry.occupied && !entry.tombstone, let key = keyToString(entry.key) {
                 body(key, entry.value)
             }
         }
@@ -374,14 +376,12 @@ private enum ProbeResult {
 // MARK: - POD Types
 
 /// Storage container for the key-value store
-@available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 public struct KeyValueStoreStorage<Value> {
     public var entries: KeyValueStoreEntries<Value>
-    public var count: Int  // Number of active entries (not tombstones)
+    public var count: Int // Number of active entries (not tombstones)
 }
 
 /// Fixed-size key storage (64 bytes) plus tracked length
-@available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 public struct KeyValueStoreKey {
     // Public storage ensures the struct remains trivial/POD
     public var storage: (
@@ -398,13 +398,13 @@ public struct KeyValueStoreKey {
 
     /// Default initializer - creates a zero-filled key
     public init() {
-        self.storage = (
+        storage = (
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         )
-        self.length = 0
+        length = 0
     }
 
     /// Subscript for byte access
@@ -425,12 +425,11 @@ public struct KeyValueStoreKey {
 }
 
 /// A single entry in the key-value store
-@available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 public struct KeyValueEntry<Value> {
     var key: KeyValueStoreKey
     var value: Value
     var occupied: Bool
-    var tombstone: Bool  // Marks deleted entries to maintain probe chains
+    var tombstone: Bool // Marks deleted entries to maintain probe chains
 
     init(key: KeyValueStoreKey = KeyValueStoreKey(), value: Value, occupied: Bool = false, tombstone: Bool = false) {
         self.key = key
@@ -441,43 +440,42 @@ public struct KeyValueEntry<Value> {
 }
 
 /// Fixed-size array of 128 entries with subscript access
-@available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 public struct KeyValueStoreEntries<Value> {
     // Public storage ensures the struct remains trivial/POD
     public var storage: (
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
-    KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>,
+        KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>, KeyValueEntry<Value>
     )
 
     /// Subscript for clean array-like access

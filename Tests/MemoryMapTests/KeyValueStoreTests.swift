@@ -1,9 +1,8 @@
-import XCTest
 @testable import MemoryMap
+import XCTest
 
 @available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 final class KeyValueStoreTests: XCTestCase {
-
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     private let collidingKeys = ["k8", "k134", "k170", "k215"]
 
@@ -323,12 +322,12 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Add many entries to increase likelihood of hash collisions
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
         // Verify all entries are retrievable
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             let value = store["key\(i)"]
             XCTAssertEqual(value?.value, i, "Failed to retrieve key\(i)")
         }
@@ -345,7 +344,7 @@ final class KeyValueStoreTests: XCTestCase {
         let capacity = KeyValueStoreDefaultCapacity
 
         // Fill the store
-        for i in 0..<capacity {
+        for i in 0 ..< capacity {
             store["key\(i)"] = TestValue(value: i)
         }
 
@@ -379,7 +378,7 @@ final class KeyValueStoreTests: XCTestCase {
             "key-with-dashes",
             "key_with_underscores",
             "key with spaces",
-            "key🎉with🌟emoji"
+            "key🎉with🌟emoji",
         ]
 
         for (index, key) in specialKeys.enumerated() {
@@ -438,12 +437,12 @@ final class KeyValueStoreTests: XCTestCase {
         let complex = ComplexValue(
             int8: -128,
             int16: -32768,
-            int32: -2147483648,
-            int64: -9223372036854775808,
+            int32: -2_147_483_648,
+            int64: -9_223_372_036_854_775_808,
             uint8: 255,
             uint16: 65535,
-            uint32: 4294967295,
-            uint64: 18446744073709551615,
+            uint32: 4_294_967_295,
+            uint64: 18_446_744_073_709_551_615,
             float: 3.14,
             double: 2.71828,
             bool1: true,
@@ -456,12 +455,12 @@ final class KeyValueStoreTests: XCTestCase {
         XCTAssertNotNil(retrieved)
         XCTAssertEqual(retrieved?.int8, -128)
         XCTAssertEqual(retrieved?.int16, -32768)
-        XCTAssertEqual(retrieved?.int32, -2147483648)
-        XCTAssertEqual(retrieved?.int64, -9223372036854775808)
+        XCTAssertEqual(retrieved?.int32, -2_147_483_648)
+        XCTAssertEqual(retrieved?.int64, -9_223_372_036_854_775_808)
         XCTAssertEqual(retrieved?.uint8, 255)
         XCTAssertEqual(retrieved?.uint16, 65535)
-        XCTAssertEqual(retrieved?.uint32, 4294967295)
-        XCTAssertEqual(retrieved?.uint64, 18446744073709551615)
+        XCTAssertEqual(retrieved?.uint32, 4_294_967_295)
+        XCTAssertEqual(retrieved?.uint64, 18_446_744_073_709_551_615)
         XCTAssertEqual(Double(retrieved!.float), 3.14, accuracy: 0.001)
         XCTAssertEqual(retrieved!.double, 2.71828, accuracy: 0.00001)
         XCTAssertEqual(retrieved?.bool1, true)
@@ -522,7 +521,6 @@ final class KeyValueStoreTests: XCTestCase {
                 return
             }
         }
-
     }
 
     // MARK: - Dictionary-like API
@@ -641,7 +639,7 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         measure {
-            for i in 0..<100 {
+            for i in 0 ..< 100 {
                 store["key\(i)"] = TestValue(value: i)
             }
         }
@@ -655,12 +653,12 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Prepopulate
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
         measure {
-            for i in 0..<100 {
+            for i in 0 ..< 100 {
                 _ = store["key\(i)"]
             }
         }
@@ -674,12 +672,12 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Prepopulate with different keys
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
         measure {
-            for i in 0..<100 {
+            for i in 0 ..< 100 {
                 _ = store["missing\(i)"]
             }
         }
@@ -693,12 +691,12 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Prepopulate
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
         measure {
-            for i in 0..<100 {
+            for i in 0 ..< 100 {
                 store["key\(i)"] = TestValue(value: i * 2)
             }
         }
@@ -713,12 +711,12 @@ final class KeyValueStoreTests: XCTestCase {
 
         measure {
             // Prepopulate
-            for i in 0..<100 {
+            for i in 0 ..< 100 {
                 store["key\(i)"] = TestValue(value: i)
             }
 
             // Remove all
-            for i in 0..<100 {
+            for i in 0 ..< 100 {
                 _ = store.removeValue(forKey: "key\(i)")
             }
         }
@@ -732,12 +730,12 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Prepopulate
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
         measure {
-            for _ in 0..<100 {
+            for _ in 0 ..< 100 {
                 _ = store.count
             }
         }
@@ -751,7 +749,7 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Prepopulate
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
@@ -768,7 +766,7 @@ final class KeyValueStoreTests: XCTestCase {
         let store = try KeyValueStore<TestValue>(fileURL: url)
 
         // Prepopulate
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             store["key\(i)"] = TestValue(value: i)
         }
 
@@ -786,19 +784,19 @@ final class KeyValueStoreTests: XCTestCase {
 
         measure {
             // Mix of operations that simulate real-world usage
-            for i in 0..<50 {
+            for i in 0 ..< 50 {
                 store["key\(i)"] = TestValue(value: i)
             }
 
-            for i in 0..<50 {
+            for i in 0 ..< 50 {
                 _ = store["key\(i)"]
             }
 
-            for i in 0..<25 {
+            for i in 0 ..< 25 {
                 store["key\(i)"] = TestValue(value: i * 2)
             }
 
-            for i in 0..<10 {
+            for i in 0 ..< 10 {
                 _ = store.removeValue(forKey: "key\(i)")
             }
 
