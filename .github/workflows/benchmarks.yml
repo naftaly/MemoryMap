@@ -1,0 +1,84 @@
+name: Benchmarks
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  benchmark:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Swift
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: "5.9"
+
+    - name: Run benchmarks
+      id: benchmark
+      run: |
+        echo "Running benchmarks..."
+        swift test 2>&1 | tee benchmark_output.txt
+
+    - name: Parse and format results
+      run: |
+        python3 << 'EOF'
+        import re
+        from datetime import datetime
+
+        # Read benchmark output
+        with open('benchmark_output.txt', 'r') as f:
+            content = f.read()
+
+        # Find all performance test results
+        pattern = r"testPerformance(\w+).*?average: ([\d.]+).*?relative standard deviation: ([\d.]+)%"
+        matches = re.findall(pattern, content)
+
+        # Start markdown output
+        output = ["## Benchmark Results\n"]
+        output.append("| Benchmark | Avg Time (ms) | Per Op (μs) | Std Dev |")
+        output.append("|-----------|---------------|-------------|---------|")
+
+        for test_name, avg_time, std_dev in matches:
+            avg_ms = float(avg_time) * 1000
+
+            # Calculate per-op for tests with 100 operations
+            if test_name in ["Count", "Keys", "ToDictionary", "MixedOperations"]:
+                per_op = "-"
+            else:
+                per_op_us = float(avg_time) * 10000  # 100 ops
+                per_op = f"{per_op_us:.1f}"
+
+            output.append(f"| **{test_name}** | {avg_ms:.2f} | {per_op} | {std_dev}% |")
+
+        # Add footer
+        total_tests = len(re.findall(r"Test Case.*passed", content))
+        output.append("")
+        output.append(f"**Total tests:** {total_tests} passed")
+        output.append("")
+        output.append(f"_Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_")
+
+        # Write to file
+        with open('benchmark_results.md', 'w') as f:
+            f.write('\n'.join(output))
+
+        print('\n'.join(output))
+        EOF
+
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request'
+      uses: thollander/actions-comment-pull-request@v2
+      with:
+        filePath: benchmark_results.md
+        comment_tag: benchmark-results
+
+    - name: Comment commit with results
+      if: github.event_name == 'push'
+      uses: peter-evans/commit-comment@v3
+      with:
+        body-path: benchmark_results.md

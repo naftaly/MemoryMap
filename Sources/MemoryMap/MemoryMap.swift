@@ -39,21 +39,21 @@ public class MemoryMap<T>: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - fileURL: The file's location on disk.
+    ///   - maxSize: Maximum allowed size for the memory-mapped region in bytes (default: 1MB).
+    ///              This is a safety limit to prevent accidentally creating huge files.
     ///
     /// Note: `T` must be a Plain Old Data (POD) type. This is validated at runtime.
-    public init(fileURL: URL) throws {
-        
+    public init(fileURL: URL, maxSize: Int = 1024 * 1024) throws {
+
         // only POD types are allowed, so basically
         // structs with built-in types (aka. trivial).
         assert(_isPOD(T.self), "\(type(of: T.self)) is a non-trivial Type.")
-        
+
         // Ensure we're not creating a huge file.
-        // 1MB for PODs should be plenty.
-        let maxSize = 1024 * 1024
         guard MemoryLayout<MemoryMapContainer>.stride <= maxSize else {
             throw MemoryMapError.invalidSize
         }
-        
+
         self.url = fileURL
         self.container = try Self._mmap(self.url, size: MemoryLayout<MemoryMapContainer>.stride)
         self._s = withUnsafeMutablePointer(to: &self.container.pointee._s) {
