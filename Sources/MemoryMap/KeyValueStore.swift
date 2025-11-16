@@ -97,13 +97,8 @@ public class KeyValueStore<Value> {
     public var keys: [String] {
         return memoryMap.get { storage in
             var keys: [String] = []
-            for i in 0..<self.capacity {
-                let entry = self.getEntry(from: &storage, at: i)
-                if entry.occupied && !entry.tombstone {
-                    if let key = self.keyToString(entry.key) {
-                        keys.append(key)
-                    }
-                }
+            self.forEachOccupiedEntry(in: &storage) { key, _ in
+                keys.append(key)
             }
             return keys
         }
@@ -174,54 +169,22 @@ public class KeyValueStore<Value> {
         let keyArray = try stringToKeyArray(key)
 
         try memoryMap.get { storage in
-            let hash = self.hashKey(keyArray)
-            var index = hash % self.capacity
-            var probeCount = 0
-            var firstTombstoneIndex: Int? = nil
-
-            // Linear probing to find empty slot, tombstone, or existing key
-            while probeCount < self.capacity {
-                let entry = self.getEntry(from: &storage, at: index)
-
-                if !entry.occupied && !entry.tombstone {
-                    // Found empty slot - use tombstone if we found one earlier, otherwise use this slot
-                    let insertIndex = firstTombstoneIndex ?? index
-                    self.setEntry(in: &storage, at: insertIndex, entry: KeyValueEntry(
-                        key: keyArray,
-                        value: value,
-                        occupied: true,
-                        tombstone: false
-                    ))
-                    storage.count += 1
-                    return
-                } else if entry.tombstone && firstTombstoneIndex == nil {
-                    // Remember first tombstone for potential reuse
-                    firstTombstoneIndex = index
-                } else if entry.occupied && !entry.tombstone && self.keysEqual(entry.key, keyArray) {
-                    // Found existing key, update value (don't change count)
-                    var updatedEntry = entry
-                    updatedEntry.value = value
-                    self.setEntry(in: &storage, at: index, entry: updatedEntry)
-                    return
-                }
-
-                index = (index + 1) % self.capacity
-                probeCount += 1
-            }
-
-            // If we found a tombstone during probing, use it
-            if let tombstoneIndex = firstTombstoneIndex {
-                self.setEntry(in: &storage, at: tombstoneIndex, entry: KeyValueEntry(
+            switch self.probeSlot(for: keyArray, in: &storage) {
+            case .found(let index):
+                var updatedEntry = self.getEntry(from: &storage, at: index)
+                updatedEntry.value = value
+                self.setEntry(in: &storage, at: index, entry: updatedEntry)
+            case .available(let index):
+                self.setEntry(in: &storage, at: index, entry: KeyValueEntry(
                     key: keyArray,
                     value: value,
                     occupied: true,
                     tombstone: false
                 ))
                 storage.count += 1
-                return
+            case .full:
+                throw KeyValueStoreError.storeFull
             }
-
-            throw KeyValueStoreError.storeFull
         }
     }
 
@@ -238,45 +201,16 @@ public class KeyValueStore<Value> {
         let keyArray = try stringToKeyArray(key)
 
         return try memoryMap.get { storage in
-            let hash = self.hashKey(keyArray)
-            var index = hash % self.capacity
-            var probeCount = 0
-            var firstTombstoneIndex: Int? = nil
-
-            // Linear probing to find empty slot, tombstone, or existing key
-            while probeCount < self.capacity {
+            switch self.probeSlot(for: keyArray, in: &storage) {
+            case .found(let index):
                 let entry = self.getEntry(from: &storage, at: index)
-
-                if !entry.occupied && !entry.tombstone {
-                    // Found empty slot - use tombstone if we found one earlier, otherwise use this slot
-                    let insertIndex = firstTombstoneIndex ?? index
-                    self.setEntry(in: &storage, at: insertIndex, entry: KeyValueEntry(
-                        key: keyArray,
-                        value: value,
-                        occupied: true,
-                        tombstone: false
-                    ))
-                    storage.count += 1
-                    return nil
-                } else if entry.tombstone && firstTombstoneIndex == nil {
-                    // Remember first tombstone for potential reuse
-                    firstTombstoneIndex = index
-                } else if entry.occupied && !entry.tombstone && self.keysEqual(entry.key, keyArray) {
-                    // Found existing key, update value (don't change count)
-                    let oldValue = entry.value
-                    var updatedEntry = entry
-                    updatedEntry.value = value
-                    self.setEntry(in: &storage, at: index, entry: updatedEntry)
-                    return oldValue
-                }
-
-                index = (index + 1) % self.capacity
-                probeCount += 1
-            }
-
-            // If we found a tombstone during probing, use it
-            if let tombstoneIndex = firstTombstoneIndex {
-                self.setEntry(in: &storage, at: tombstoneIndex, entry: KeyValueEntry(
+                let oldValue = entry.value
+                var updatedEntry = entry
+                updatedEntry.value = value
+                self.setEntry(in: &storage, at: index, entry: updatedEntry)
+                return oldValue
+            case .available(let index):
+                self.setEntry(in: &storage, at: index, entry: KeyValueEntry(
                     key: keyArray,
                     value: value,
                     occupied: true,
@@ -284,9 +218,9 @@ public class KeyValueStore<Value> {
                 ))
                 storage.count += 1
                 return nil
+            case .full:
+                throw KeyValueStoreError.storeFull
             }
-
-            throw KeyValueStoreError.storeFull
         }
     }
 
@@ -301,31 +235,17 @@ public class KeyValueStore<Value> {
         }
 
         return memoryMap.get { storage in
-            let hash = self.hashKey(keyArray)
-            var index = hash % self.capacity
-            var probeCount = 0
-
-            while probeCount < self.capacity {
-                var entry = self.getEntry(from: &storage, at: index)
-
-                if !entry.occupied && !entry.tombstone {
-                    // Empty slot means key not found
-                    return nil
-                } else if entry.occupied && !entry.tombstone && self.keysEqual(entry.key, keyArray) {
-                    // Mark as tombstone to maintain probe chains
-                    let oldValue = entry.value
-                    entry.occupied = false
-                    entry.tombstone = true
-                    self.setEntry(in: &storage, at: index, entry: entry)
-                    storage.count -= 1
-                    return oldValue
-                }
-
-                index = (index + 1) % self.capacity
-                probeCount += 1
+            guard case let .found(index) = self.probeSlot(for: keyArray, in: &storage) else {
+                return nil
             }
 
-            return nil
+            var entry = self.getEntry(from: &storage, at: index)
+            let oldValue = entry.value
+            entry.occupied = false
+            entry.tombstone = true
+            self.setEntry(in: &storage, at: index, entry: entry)
+            storage.count -= 1
+            return oldValue
         }
     }
 
@@ -340,12 +260,7 @@ public class KeyValueStore<Value> {
     /// Removes all entries from the store.
     public func removeAll() {
         memoryMap.get { storage in
-            for i in 0..<self.capacity {
-                var entry = self.getEntry(from: &storage, at: i)
-                entry.occupied = false
-                entry.tombstone = false
-                self.setEntry(in: &storage, at: i, entry: entry)
-            }
+            storage.entries.reset()
             storage.count = 0
         }
     }
@@ -360,13 +275,8 @@ public class KeyValueStore<Value> {
         return memoryMap.get { storage in
             var dict: [String: Value] = [:]
             dict.reserveCapacity(storage.count)
-            for i in 0..<self.capacity {
-                let entry = self.getEntry(from: &storage, at: i)
-                if entry.occupied && !entry.tombstone {
-                    if let key = self.keyToString(entry.key) {
-                        dict[key] = entry.value
-                    }
-                }
+            self.forEachOccupiedEntry(in: &storage) { key, value in
+                dict[key] = value
             }
             return dict
         }
@@ -379,6 +289,7 @@ public class KeyValueStore<Value> {
             throw KeyValueStoreError.keyTooLong
         }
         var keyArray = KeyValueStoreKey()
+        keyArray.length = UInt8(keyBytes.count)
         for i in 0..<keyBytes.count {
             keyArray[i] = Int8(bitPattern: keyBytes[i])
         }
@@ -391,26 +302,11 @@ public class KeyValueStore<Value> {
         }
 
         return memoryMap.get { storage in
-            let hash = self.hashKey(keyArray)
-            var index = hash % self.capacity
-            var probeCount = 0
-
-            while probeCount < self.capacity {
-                let entry = self.getEntry(from: &storage, at: index)
-
-                if !entry.occupied && !entry.tombstone {
-                    // Empty slot means key not found
-                    return nil
-                } else if entry.occupied && !entry.tombstone && self.keysEqual(entry.key, keyArray) {
-                    return entry.value
-                }
-                // If tombstone, continue probing
-
-                index = (index + 1) % self.capacity
-                probeCount += 1
+            guard case let .found(index) = self.probeSlot(for: keyArray, in: &storage) else {
+                return nil
             }
-
-            return nil
+            let entry = self.getEntry(from: &storage, at: index)
+            return entry.value
         }
     }
 
@@ -425,9 +321,9 @@ public class KeyValueStore<Value> {
     private func hashKey(_ key: KeyValueStoreKey) -> Int {
         // djb2 hash algorithm
         var hash = 5381
-        for i in 0..<KeyValueStoreMaxKeyLength {
+        let length = self.keyLength(key)
+        for i in 0..<length {
             let byte = key[i]
-            if byte == 0 { break }
             hash = ((hash << 5) &+ hash) &+ Int(byte)
         }
         // Ensure non-negative result (abs(Int.min) overflows, so use bitwise AND with Int.max)
@@ -435,7 +331,12 @@ public class KeyValueStore<Value> {
     }
 
     private func keysEqual(_ key1: KeyValueStoreKey, _ key2: KeyValueStoreKey) -> Bool {
-        for i in 0..<KeyValueStoreMaxKeyLength {
+        let length1 = self.keyLength(key1)
+        let length2 = self.keyLength(key2)
+        guard length1 == length2 else {
+            return false
+        }
+        for i in 0..<length1 {
             if key1[i] != key2[i] {
                 return false
             }
@@ -444,10 +345,9 @@ public class KeyValueStore<Value> {
     }
 
     private func keyToString(_ key: KeyValueStoreKey) -> String? {
-        // Find the null terminator
-        var length = 0
-        while length < KeyValueStoreMaxKeyLength && key[length] != 0 {
-            length += 1
+        let length = self.keyLength(key)
+        guard length <= KeyValueStoreMaxKeyLength else {
+            return nil
         }
         var data = Data(count: length)
         for i in 0..<length {
@@ -455,6 +355,76 @@ public class KeyValueStore<Value> {
         }
         return String(data: data, encoding: .utf8)
     }
+
+    private func keyLength(_ key: KeyValueStoreKey) -> Int {
+        let storedLength = Int(key.length)
+        if storedLength != 0 || self.keyBytesAreAllZero(key) {
+            return storedLength
+        }
+
+        // Legacy entries created before we stored the length rely on a null terminator.
+        var length = 0
+        while length < KeyValueStoreMaxKeyLength && key[length] != 0 {
+            length += 1
+        }
+        return length
+    }
+
+    private func keyBytesAreAllZero(_ key: KeyValueStoreKey) -> Bool {
+        for i in 0..<KeyValueStoreMaxKeyLength {
+            if key[i] != 0 {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func probeSlot(for key: KeyValueStoreKey, in storage: inout KeyValueStoreStorage<Value>) -> ProbeResult {
+        let hash = self.hashKey(key)
+        var index = hash % self.capacity
+        var probeCount = 0
+        var firstTombstoneIndex: Int?
+
+        while probeCount < self.capacity {
+            let entry = self.getEntry(from: &storage, at: index)
+
+            if entry.occupied && !entry.tombstone {
+                if self.keysEqual(entry.key, key) {
+                    return .found(index)
+                }
+            } else if entry.tombstone {
+                if firstTombstoneIndex == nil {
+                    firstTombstoneIndex = index
+                }
+            } else {
+                return .available(firstTombstoneIndex ?? index)
+            }
+
+            index = (index + 1) % self.capacity
+            probeCount += 1
+        }
+
+        if let tombstoneIndex = firstTombstoneIndex {
+            return .available(tombstoneIndex)
+        }
+
+        return .full
+    }
+
+    private func forEachOccupiedEntry(in storage: inout KeyValueStoreStorage<Value>, _ body: (String, Value) -> Void) {
+        for i in 0..<self.capacity {
+            let entry = self.getEntry(from: &storage, at: i)
+            if entry.occupied && !entry.tombstone, let key = self.keyToString(entry.key) {
+                body(key, entry.value)
+            }
+        }
+    }
+}
+
+private enum ProbeResult {
+    case found(Int)
+    case available(Int)
+    case full
 }
 
 // MARK: - POD Types
@@ -466,9 +436,9 @@ public struct KeyValueStoreStorage<Value> {
     public var count: Int  // Number of active entries (not tombstones)
 }
 
-/// Fixed-size byte array (64 bytes) with subscript access
+/// Fixed-size key storage (64 bytes) plus tracked length
 @available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-public struct FixedByteArray64 {
+public struct KeyValueStoreKey {
     // Public storage ensures the struct remains trivial/POD
     public var storage: (
         Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8,
@@ -480,8 +450,9 @@ public struct FixedByteArray64 {
         Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8,
         Int8, Int8, Int8, Int8, Int8, Int8, Int8, Int8
     )
+    public var length: UInt8
 
-    /// Default initializer - creates a zero-filled array
+    /// Default initializer - creates a zero-filled key
     public init() {
         self.storage = (
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -489,6 +460,7 @@ public struct FixedByteArray64 {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         )
+        self.length = 0
     }
 
     /// Subscript for byte access
@@ -505,23 +477,6 @@ public struct FixedByteArray64 {
                 ptr[index] = UInt8(bitPattern: newValue)
             }
         }
-    }
-}
-
-/// Fixed-size key storage (64 bytes)
-@available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
-public struct KeyValueStoreKey {
-    public var bytes: FixedByteArray64
-
-    /// Default initializer - creates a zero-filled key
-    public init() {
-        self.bytes = FixedByteArray64()
-    }
-
-    /// Convenience subscript that delegates to bytes
-    public subscript(index: Int) -> Int8 {
-        get { bytes[index] }
-        set { bytes[index] = newValue }
     }
 }
 
@@ -594,6 +549,13 @@ public struct KeyValueStoreEntries<Value> {
             withUnsafeMutableBytes(of: &storage) { ptr in
                 ptr.bindMemory(to: KeyValueEntry<Value>.self)[index] = newValue
             }
+        }
+    }
+
+    /// Zeroes the entire storage, marking every entry as empty.
+    public mutating func reset() {
+        _ = withUnsafeMutableBytes(of: &storage) { ptr in
+            ptr.initializeMemory(as: UInt8.self, repeating: 0)
         }
     }
 }
