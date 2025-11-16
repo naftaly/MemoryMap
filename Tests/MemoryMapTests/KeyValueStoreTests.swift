@@ -5,6 +5,7 @@ import XCTest
 final class KeyValueStoreTests: XCTestCase {
 
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    private let collidingKeys = ["k8", "k134", "k170", "k215"]
 
     override func tearDown() {
         try? FileManager.default.removeItem(at: url)
@@ -84,39 +85,38 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        // Use very small capacity to force hash collisions
-        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 4)
+        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let keys = collidingKeys
 
-        // Insert keys that will create a probe chain
-        // With capacity 4, we're almost guaranteed collisions
-        store["a"] = TestValue(value: 1)
-        store["b"] = TestValue(value: 2)
-        store["c"] = TestValue(value: 3)
-        store["d"] = TestValue(value: 4)
+        // Insert keys that will create a probe chain (all map to same slot)
+        store[keys[0]] = TestValue(value: 1)
+        store[keys[1]] = TestValue(value: 2)
+        store[keys[2]] = TestValue(value: 3)
+        store[keys[3]] = TestValue(value: 4)
 
         // Verify all keys are accessible before deletion
-        XCTAssertEqual(store["a"]?.value, 1)
-        XCTAssertEqual(store["b"]?.value, 2)
-        XCTAssertEqual(store["c"]?.value, 3)
-        XCTAssertEqual(store["d"]?.value, 4)
+        XCTAssertEqual(store[keys[0]]?.value, 1)
+        XCTAssertEqual(store[keys[1]]?.value, 2)
+        XCTAssertEqual(store[keys[2]]?.value, 3)
+        XCTAssertEqual(store[keys[3]]?.value, 4)
 
         // Remove the first key
-        let removed = store.removeValue(forKey: "a")
+        let removed = store.removeValue(forKey: keys[0])
         XCTAssertEqual(removed?.value, 1)
-        XCTAssertNil(store["a"], "Removed key should not be found")
+        XCTAssertNil(store[keys[0]], "Removed key should not be found")
 
         // CRITICAL: These lookups should still work!
         // If deletion just marks as unoccupied without rehashing,
         // any keys that were in the probe chain after the deleted key
         // will become unreachable because the probe chain is broken.
-        XCTAssertEqual(store["b"]?.value, 2, "key b should still be accessible after deleting a")
-        XCTAssertEqual(store["c"]?.value, 3, "key c should still be accessible after deleting a")
-        XCTAssertEqual(store["d"]?.value, 4, "key d should still be accessible after deleting a")
+        XCTAssertEqual(store[keys[1]]?.value, 2, "key b should still be accessible after deleting a")
+        XCTAssertEqual(store[keys[2]]?.value, 3, "key c should still be accessible after deleting a")
+        XCTAssertEqual(store[keys[3]]?.value, 4, "key d should still be accessible after deleting a")
 
         // Try removing another and verify remaining keys
-        store.removeValue(forKey: "c")
-        XCTAssertEqual(store["b"]?.value, 2, "key b should still be accessible after deleting c")
-        XCTAssertEqual(store["d"]?.value, 4, "key d should still be accessible after deleting c")
+        store.removeValue(forKey: keys[2])
+        XCTAssertEqual(store[keys[1]]?.value, 2, "key b should still be accessible after deleting c")
+        XCTAssertEqual(store[keys[3]]?.value, 4, "key d should still be accessible after deleting c")
 
         // Verify count is correct
         XCTAssertEqual(store.count, 2, "Count should be 2 after removing 2 keys")
@@ -127,26 +127,26 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        // Capacity 3 - very small to force collisions
-        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 3)
+        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let keys = Array(collidingKeys.prefix(3))
 
-        // Fill all slots to guarantee a probe chain exists
-        store["x"] = TestValue(value: 10)
-        store["y"] = TestValue(value: 20)
-        store["z"] = TestValue(value: 30)
+        // Fill colliding slots to guarantee a probe chain exists
+        store[keys[0]] = TestValue(value: 10)
+        store[keys[1]] = TestValue(value: 20)
+        store[keys[2]] = TestValue(value: 30)
 
         // Verify all are accessible
-        XCTAssertEqual(store["x"]?.value, 10)
-        XCTAssertEqual(store["y"]?.value, 20)
-        XCTAssertEqual(store["z"]?.value, 30)
+        XCTAssertEqual(store[keys[0]]?.value, 10)
+        XCTAssertEqual(store[keys[1]]?.value, 20)
+        XCTAssertEqual(store[keys[2]]?.value, 30)
 
         // Remove middle element (most likely to break chain)
-        store.removeValue(forKey: "y")
+        store.removeValue(forKey: keys[1])
 
         // CRITICAL: x and z should still be findable
-        XCTAssertEqual(store["x"]?.value, 10, "x should be findable after removing y")
-        XCTAssertEqual(store["z"]?.value, 30, "z should be findable after removing y")
-        XCTAssertNil(store["y"], "y should not be findable after removal")
+        XCTAssertEqual(store[keys[0]]?.value, 10, "x should be findable after removing y")
+        XCTAssertEqual(store[keys[2]]?.value, 30, "z should be findable after removing y")
+        XCTAssertNil(store[keys[1]], "y should not be findable after removal")
     }
 
     func testDeletionAndReinsertion() throws {
@@ -154,23 +154,24 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 10)
+        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let keys = Array(collidingKeys.prefix(3))
 
         // Create a probe chain scenario
-        store["a"] = TestValue(value: 1)
-        store["b"] = TestValue(value: 2)
-        store["c"] = TestValue(value: 3)
+        store[keys[0]] = TestValue(value: 1)
+        store[keys[1]] = TestValue(value: 2)
+        store[keys[2]] = TestValue(value: 3)
 
         // Remove middle element
-        store.removeValue(forKey: "b")
+        store.removeValue(forKey: keys[1])
 
         // Reinsert with different value
-        store["b"] = TestValue(value: 20)
+        store[keys[1]] = TestValue(value: 20)
 
         // All should be accessible
-        XCTAssertEqual(store["a"]?.value, 1)
-        XCTAssertEqual(store["b"]?.value, 20)
-        XCTAssertEqual(store["c"]?.value, 3)
+        XCTAssertEqual(store[keys[0]]?.value, 1)
+        XCTAssertEqual(store[keys[1]]?.value, 20)
+        XCTAssertEqual(store[keys[2]]?.value, 3)
 
         // Count should be correct
         XCTAssertEqual(store.count, 3)
@@ -340,19 +341,21 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url, capacity: 10)
+        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let capacity = KeyValueStoreDefaultCapacity
 
         // Fill the store
-        for i in 0..<10 {
+        for i in 0..<capacity {
             store["key\(i)"] = TestValue(value: i)
         }
 
         // Subscript silently ignores when full
-        store["key11"] = TestValue(value: 11)
-        XCTAssertNil(store["key11"])
+        let overflowKey = "overflow"
+        store[overflowKey] = TestValue(value: 999)
+        XCTAssertNil(store[overflowKey])
 
         // But explicit set should throw
-        XCTAssertThrowsError(try store.set("key11", TestValue(value: 11))) { error in
+        XCTAssertThrowsError(try store.set(overflowKey, TestValue(value: 999))) { error in
             guard case KeyValueStoreError.storeFull = error else {
                 XCTFail("Expected KeyValueStoreError.storeFull, got \(error)")
                 return
@@ -492,26 +495,6 @@ final class KeyValueStoreTests: XCTestCase {
         XCTAssertEqual(store["b"]?.value, 2)
     }
 
-    func testInvalidCapacity() throws {
-        struct TestValue {
-            var value: Int
-        }
-
-        XCTAssertThrowsError(try KeyValueStore<TestValue>(fileURL: url, capacity: 0)) { error in
-            guard case KeyValueStoreError.invalidCapacity = error else {
-                XCTFail("Expected KeyValueStoreError.invalidCapacity, got \(error)")
-                return
-            }
-        }
-
-        XCTAssertThrowsError(try KeyValueStore<TestValue>(fileURL: url, capacity: 129)) { error in
-            guard case KeyValueStoreError.invalidCapacity = error else {
-                XCTFail("Expected KeyValueStoreError.invalidCapacity, got \(error)")
-                return
-            }
-        }
-    }
-
     func testValueTooLarge() throws {
         // Create a large struct that exceeds default max (1KB)
         struct LargeValue {
@@ -540,9 +523,6 @@ final class KeyValueStoreTests: XCTestCase {
             }
         }
 
-        // Should succeed with increased max value size
-        let store = try KeyValueStore<LargeValue>(fileURL: url, maxValueSize: 2048)
-        XCTAssertNotNil(store)
     }
 
     // MARK: - Dictionary-like API

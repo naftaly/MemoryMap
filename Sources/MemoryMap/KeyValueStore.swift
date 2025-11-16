@@ -74,7 +74,6 @@ public let KeyValueStoreDefaultMaxValueSize = 1024
 public class KeyValueStore<Value> {
 
     private let memoryMap: MemoryMap<KeyValueStoreStorage<Value>>
-    private let capacity: Int
 
     /// The URL of the memory-mapped file backing this store
     public var url: URL {
@@ -137,20 +136,13 @@ public class KeyValueStore<Value> {
     ///
     /// - Parameters:
     ///   - fileURL: The file location for the memory-mapped store
-    ///   - capacity: Maximum number of entries (default: 128, max: 128)
-    ///   - maxValueSize: Maximum allowed size for the Value type in bytes (default: 1KB).
-    ///                   This is a safety limit to prevent accidentally using large structs as values.
     ///
     /// - Note: The capacity is fixed at initialization and cannot be changed later.
     ///         Maximum capacity is currently limited to 128 entries.
-    public init(fileURL: URL, capacity: Int = KeyValueStoreDefaultCapacity, maxValueSize: Int = KeyValueStoreDefaultMaxValueSize) throws {
-        guard capacity <= KeyValueStoreDefaultCapacity && capacity > 0 else {
-            throw KeyValueStoreError.invalidCapacity
-        }
-        guard MemoryLayout<Value>.stride <= maxValueSize else {
+    public init(fileURL: URL) throws {
+        guard MemoryLayout<Value>.stride <= KeyValueStoreDefaultMaxValueSize else {
             throw KeyValueStoreError.valueTooLarge
         }
-        self.capacity = capacity
         self.memoryMap = try MemoryMap<KeyValueStoreStorage<Value>>(fileURL: fileURL)
     }
 
@@ -357,35 +349,16 @@ public class KeyValueStore<Value> {
     }
 
     private func keyLength(_ key: KeyValueStoreKey) -> Int {
-        let storedLength = Int(key.length)
-        if storedLength != 0 || self.keyBytesAreAllZero(key) {
-            return storedLength
-        }
-
-        // Legacy entries created before we stored the length rely on a null terminator.
-        var length = 0
-        while length < KeyValueStoreMaxKeyLength && key[length] != 0 {
-            length += 1
-        }
-        return length
-    }
-
-    private func keyBytesAreAllZero(_ key: KeyValueStoreKey) -> Bool {
-        for i in 0..<KeyValueStoreMaxKeyLength {
-            if key[i] != 0 {
-                return false
-            }
-        }
-        return true
+        return Int(key.length)
     }
 
     private func probeSlot(for key: KeyValueStoreKey, in storage: inout KeyValueStoreStorage<Value>) -> ProbeResult {
         let hash = self.hashKey(key)
-        var index = hash % self.capacity
+        var index = hash % KeyValueStoreDefaultCapacity
         var probeCount = 0
         var firstTombstoneIndex: Int?
 
-        while probeCount < self.capacity {
+        while probeCount < KeyValueStoreDefaultCapacity {
             let entry = self.getEntry(from: &storage, at: index)
 
             if entry.occupied && !entry.tombstone {
@@ -400,7 +373,7 @@ public class KeyValueStore<Value> {
                 return .available(firstTombstoneIndex ?? index)
             }
 
-            index = (index + 1) % self.capacity
+            index = (index + 1) % KeyValueStoreDefaultCapacity
             probeCount += 1
         }
 
@@ -412,7 +385,7 @@ public class KeyValueStore<Value> {
     }
 
     private func forEachOccupiedEntry(in storage: inout KeyValueStoreStorage<Value>, _ body: (String, Value) -> Void) {
-        for i in 0..<self.capacity {
+        for i in 0..<KeyValueStoreDefaultCapacity {
             let entry = self.getEntry(from: &storage, at: i)
             if entry.occupied && !entry.tombstone, let key = self.keyToString(entry.key) {
                 body(key, entry.value)
@@ -565,6 +538,5 @@ public struct KeyValueStoreEntries<Value> {
 public enum KeyValueStoreError: Error {
     case keyTooLong
     case storeFull
-    case invalidCapacity
     case valueTooLarge
 }
