@@ -18,7 +18,7 @@ final class KeyValueStoreTests: XCTestCase {
             var flag: Bool
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(counter: 42, flag: true)
 
@@ -33,7 +33,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let value = store["nonexistent"]
         XCTAssertNil(value)
@@ -44,7 +44,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 10)
         store["key1"] = TestValue(value: 20)
@@ -58,7 +58,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 42)
         let removed = store["key1"]
@@ -72,7 +72,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let removed = store["nonexistent"]
         store["nonexistent"] = nil
@@ -86,39 +86,39 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
         let keys = collidingKeys
 
         // Insert keys that will create a probe chain (all map to same slot)
-        store[keys[0]] = TestValue(value: 1)
-        store[keys[1]] = TestValue(value: 2)
-        store[keys[2]] = TestValue(value: 3)
-        store[keys[3]] = TestValue(value: 4)
+        store[BasicType64(keys[0])] = TestValue(value: 1)
+        store[BasicType64(keys[1])] = TestValue(value: 2)
+        store[BasicType64(keys[2])] = TestValue(value: 3)
+        store[BasicType64(keys[3])] = TestValue(value: 4)
 
         // Verify all keys are accessible before deletion
-        XCTAssertEqual(store[keys[0]]?.value, 1)
-        XCTAssertEqual(store[keys[1]]?.value, 2)
-        XCTAssertEqual(store[keys[2]]?.value, 3)
-        XCTAssertEqual(store[keys[3]]?.value, 4)
+        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 1)
+        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2)
+        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3)
+        XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4)
 
         // Remove the first key
-        let removed = store[keys[0]]
-        store[keys[0]] = nil
+        let removed = store[BasicType64(keys[0])]
+        store[BasicType64(keys[0])] = nil
         XCTAssertEqual(removed?.value, 1)
-        XCTAssertNil(store[keys[0]], "Removed key should not be found")
+        XCTAssertNil(store[BasicType64(keys[0])], "Removed key should not be found")
 
         // CRITICAL: These lookups should still work!
         // If deletion just marks as unoccupied without rehashing,
         // any keys that were in the probe chain after the deleted key
         // will become unreachable because the probe chain is broken.
-        XCTAssertEqual(store[keys[1]]?.value, 2, "key b should still be accessible after deleting a")
-        XCTAssertEqual(store[keys[2]]?.value, 3, "key c should still be accessible after deleting a")
-        XCTAssertEqual(store[keys[3]]?.value, 4, "key d should still be accessible after deleting a")
+        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2, "key b should still be accessible after deleting a")
+        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3, "key c should still be accessible after deleting a")
+        XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4, "key d should still be accessible after deleting a")
 
         // Try removing another and verify remaining keys
-        store[keys[2]] = nil
-        XCTAssertEqual(store[keys[1]]?.value, 2, "key b should still be accessible after deleting c")
-        XCTAssertEqual(store[keys[3]]?.value, 4, "key d should still be accessible after deleting c")
+        store[BasicType64(keys[2])] = nil
+        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2, "key b should still be accessible after deleting c")
+        XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4, "key d should still be accessible after deleting c")
     }
 
     func testDeletionBreaksProbeChainScenario() throws {
@@ -126,26 +126,26 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
         let keys = Array(collidingKeys.prefix(3))
 
         // Fill colliding slots to guarantee a probe chain exists
-        store[keys[0]] = TestValue(value: 10)
-        store[keys[1]] = TestValue(value: 20)
-        store[keys[2]] = TestValue(value: 30)
+        store[BasicType64(keys[0])] = TestValue(value: 10)
+        store[BasicType64(keys[1])] = TestValue(value: 20)
+        store[BasicType64(keys[2])] = TestValue(value: 30)
 
         // Verify all are accessible
-        XCTAssertEqual(store[keys[0]]?.value, 10)
-        XCTAssertEqual(store[keys[1]]?.value, 20)
-        XCTAssertEqual(store[keys[2]]?.value, 30)
+        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 10)
+        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 20)
+        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 30)
 
         // Remove middle element (most likely to break chain)
-        store[keys[1]] = nil
+        store[BasicType64(keys[1])] = nil
 
         // CRITICAL: x and z should still be findable
-        XCTAssertEqual(store[keys[0]]?.value, 10, "x should be findable after removing y")
-        XCTAssertEqual(store[keys[2]]?.value, 30, "z should be findable after removing y")
-        XCTAssertNil(store[keys[1]], "y should not be findable after removal")
+        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 10, "x should be findable after removing y")
+        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 30, "z should be findable after removing y")
+        XCTAssertNil(store[BasicType64(keys[1])], "y should not be findable after removal")
     }
 
     func testDeletionAndReinsertion() throws {
@@ -153,24 +153,24 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
         let keys = Array(collidingKeys.prefix(3))
 
         // Create a probe chain scenario
-        store[keys[0]] = TestValue(value: 1)
-        store[keys[1]] = TestValue(value: 2)
-        store[keys[2]] = TestValue(value: 3)
+        store[BasicType64(keys[0])] = TestValue(value: 1)
+        store[BasicType64(keys[1])] = TestValue(value: 2)
+        store[BasicType64(keys[2])] = TestValue(value: 3)
 
         // Remove middle element
-        store[keys[1]] = nil
+        store[BasicType64(keys[1])] = nil
 
         // Reinsert with different value
-        store[keys[1]] = TestValue(value: 20)
+        store[BasicType64(keys[1])] = TestValue(value: 20)
 
         // All should be accessible
-        XCTAssertEqual(store[keys[0]]?.value, 1)
-        XCTAssertEqual(store[keys[1]]?.value, 20)
-        XCTAssertEqual(store[keys[2]]?.value, 3)
+        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 1)
+        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 20)
+        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3)
     }
 
     func testContains() throws {
@@ -178,7 +178,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 42)
 
@@ -193,7 +193,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 1)
         store["key2"] = TestValue(value: 2)
@@ -209,7 +209,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 1)
         store["key2"] = TestValue(value: 2)
@@ -227,7 +227,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 1)
         store["key2"] = TestValue(value: 2)
@@ -249,7 +249,7 @@ final class KeyValueStoreTests: XCTestCase {
             var timestamp: Double
         }
 
-        var store: KeyValueStore<TestValue>? = try KeyValueStore(fileURL: url)
+        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
         store?["user:123"] = TestValue(counter: 100, timestamp: 12345.67)
         store?["user:456"] = TestValue(counter: 200, timestamp: 67890.12)
@@ -276,7 +276,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Keys longer than 64 bytes are truncated in release builds
         // (assertion in debug builds)
@@ -284,12 +284,12 @@ final class KeyValueStoreTests: XCTestCase {
 
         // Use a key that's exactly at the limit (64 bytes)
         let maxKey = String(repeating: "a", count: 64)
-        store[maxKey] = TestValue(value: 42)
-        XCTAssertEqual(store[maxKey]?.value, 42)
+        store[BasicType64(maxKey)] = TestValue(value: 42)
+        XCTAssertEqual(store[BasicType64(maxKey)]?.value, 42)
 
         // Clean up
-        store[maxKey] = nil
-        XCTAssertNil(store[maxKey])
+        store[BasicType64(maxKey)] = nil
+        XCTAssertNil(store[BasicType64(maxKey)])
     }
 
     func testMaxKeyLength() throws {
@@ -297,13 +297,13 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Create a key exactly 64 bytes
         let maxKey = String(repeating: "a", count: 64)
 
-        store[maxKey] = TestValue(value: 42)
-        XCTAssertEqual(store[maxKey]?.value, 42)
+        store[BasicType64(maxKey)] = TestValue(value: 42)
+        XCTAssertEqual(store[BasicType64(maxKey)]?.value, 42)
     }
 
     // MARK: - Hash Collisions
@@ -313,16 +313,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Add many entries to increase likelihood of hash collisions
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         // Verify all entries are retrievable
         for i in 0 ..< 100 {
-            let value = store["key\(i)"]
+            let value = store[BasicType64("key\(i)")]
             XCTAssertEqual(value?.value, i, "Failed to retrieve key\(i)")
         }
     }
@@ -334,18 +334,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
         let capacity = KeyValueStoreDefaultCapacity
 
         // Fill the store
         for i in 0 ..< capacity {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         // Subscript silently ignores when full
         let overflowKey = "overflow"
-        store[overflowKey] = TestValue(value: 999)
-        XCTAssertNil(store[overflowKey], "Store should be full and unable to add new keys")
+        store[BasicType64(overflowKey)] = TestValue(value: 999)
+        XCTAssertNil(store[BasicType64(overflowKey)], "Store should be full and unable to add new keys")
     }
 
     // MARK: - Special Characters in Keys
@@ -355,7 +355,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let specialKeys = [
             "key:with:colons",
@@ -368,11 +368,11 @@ final class KeyValueStoreTests: XCTestCase {
         ]
 
         for (index, key) in specialKeys.enumerated() {
-            store[key] = TestValue(value: index)
+            store[BasicType64(key)] = TestValue(value: index)
         }
 
         for (index, key) in specialKeys.enumerated() {
-            let value = store[key]
+            let value = store[BasicType64(key)]
             XCTAssertEqual(value?.value, index, "Failed for key: \(key)")
         }
     }
@@ -384,7 +384,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
         store["key"] = TestValue(value: Int.max)
         XCTAssertEqual(store["key"]?.value, Int.max)
     }
@@ -394,7 +394,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Double
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
         store["key"] = TestValue(value: 3.14159)
 
         let retrieved = store["key"]
@@ -418,7 +418,7 @@ final class KeyValueStoreTests: XCTestCase {
             var bool2: Bool
         }
 
-        let store = try KeyValueStore<ComplexValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, ComplexValue>(fileURL: url)
 
         let complex = ComplexValue(
             int8: -128,
@@ -460,7 +460,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store[""] = TestValue(value: 42)
         XCTAssertEqual(store[""]?.value, 42)
@@ -471,42 +471,13 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["a"] = TestValue(value: 1)
         store["b"] = TestValue(value: 2)
 
         XCTAssertEqual(store["a"]?.value, 1)
         XCTAssertEqual(store["b"]?.value, 2)
-    }
-
-    func testValueTooLarge() throws {
-        // Create a large struct that exceeds default max (1KB)
-        struct LargeValue {
-            var data: (
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int, Int, Int, Int, Int, Int, Int, Int, Int
-            ) // 130 * 8 = 1040 bytes
-        }
-
-        // Should fail with default max value size (1KB)
-        XCTAssertThrowsError(try KeyValueStore<LargeValue>(fileURL: url)) { error in
-            guard case KeyValueStoreError.valueTooLarge = error else {
-                XCTFail("Expected KeyValueStoreError.valueTooLarge, got \(error)")
-                return
-            }
-        }
     }
 
     // MARK: - Dictionary-like API
@@ -516,7 +487,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Test setting and getting
         store["key"] = TestValue(value: 42)
@@ -536,7 +507,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Non-existent key returns default
         let value1 = store["missing", default: TestValue(value: 99)]
@@ -553,7 +524,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Set initial value
         store["key"] = TestValue(value: 42)
@@ -571,7 +542,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         store["key1"] = TestValue(value: 1)
         store["key2"] = TestValue(value: 2)
@@ -596,11 +567,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         measure {
             for i in 0 ..< 100 {
-                store["key\(i)"] = TestValue(value: i)
+                store[BasicType64("key\(i)")] = TestValue(value: i)
             }
         }
     }
@@ -610,16 +581,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
         }
     }
@@ -629,16 +600,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate with different keys
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
-                _ = store["missing\(i)"]
+                _ = store[BasicType64("missing\(i)")]
             }
         }
     }
@@ -648,16 +619,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
-                store["key\(i)"] = TestValue(value: i * 2)
+                store[BasicType64("key\(i)")] = TestValue(value: i * 2)
             }
         }
     }
@@ -667,17 +638,17 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         measure {
             // Prepopulate
             for i in 0 ..< 100 {
-                store["key\(i)"] = TestValue(value: i)
+                store[BasicType64("key\(i)")] = TestValue(value: i)
             }
 
             // Remove all
             for i in 0 ..< 100 {
-                store["key\(i)"] = nil
+                store[BasicType64("key\(i)")] = nil
             }
         }
     }
@@ -687,11 +658,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
@@ -706,11 +677,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
@@ -723,11 +694,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
@@ -740,24 +711,24 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         measure {
             // Mix of operations that simulate real-world usage
             for i in 0 ..< 50 {
-                store["key\(i)"] = TestValue(value: i)
+                store[BasicType64("key\(i)")] = TestValue(value: i)
             }
 
             for i in 0 ..< 50 {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
 
             for i in 0 ..< 25 {
-                store["key\(i)"] = TestValue(value: i * 2)
+                store[BasicType64("key\(i)")] = TestValue(value: i * 2)
             }
 
             for i in 0 ..< 10 {
-                store["key\(i)"] = nil
+                store[BasicType64("key\(i)")] = nil
             }
 
             _ = store.keys
@@ -771,11 +742,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         let iterations = 1000
@@ -786,7 +757,7 @@ final class KeyValueStoreTests: XCTestCase {
             DispatchQueue.global().async {
                 for _ in 0 ..< iterations {
                     let index = Int.random(in: 0 ..< 100)
-                    let value = store["key\(index)"]
+                    let value = store[BasicType64("key\(index)")]
                     XCTAssertEqual(value?.value, index)
                 }
                 expectation.fulfill()
@@ -801,7 +772,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let iterations = 30 // 4 threads * 30 items = 120 total (within 128 capacity)
         let expectation = XCTestExpectation(description: "Concurrent writes")
@@ -811,7 +782,7 @@ final class KeyValueStoreTests: XCTestCase {
             DispatchQueue.global().async {
                 for i in 0 ..< iterations {
                     let key = "thread\(threadId)_key\(i)"
-                    store[key] = TestValue(value: i)
+                    store[BasicType64(key)] = TestValue(value: i)
                 }
                 expectation.fulfill()
             }
@@ -823,7 +794,7 @@ final class KeyValueStoreTests: XCTestCase {
         for threadId in 0 ..< 4 {
             for i in 0 ..< iterations {
                 let key = "thread\(threadId)_key\(i)"
-                XCTAssertEqual(store[key]?.value, i, "Failed for \(key)")
+                XCTAssertEqual(store[BasicType64(key)]?.value, i, "Failed for \(key)")
             }
         }
     }
@@ -833,11 +804,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate some data
         for i in 0 ..< 30 {
-            store["shared\(i)"] = TestValue(value: i)
+            store[BasicType64("shared\(i)")] = TestValue(value: i)
         }
 
         let expectation = XCTestExpectation(description: "Concurrent mixed operations")
@@ -848,7 +819,7 @@ final class KeyValueStoreTests: XCTestCase {
             DispatchQueue.global().async {
                 for _ in 0 ..< 200 {
                     let index = Int.random(in: 0 ..< 30)
-                    _ = store["shared\(index)"]
+                    _ = store[BasicType64("shared\(index)")]
                 }
                 expectation.fulfill()
             }
@@ -859,7 +830,7 @@ final class KeyValueStoreTests: XCTestCase {
             DispatchQueue.global().async {
                 for i in 0 ..< 20 {
                     let key = "writer\(threadId)_\(i)"
-                    store[key] = TestValue(value: i * threadId)
+                    store[BasicType64(key)] = TestValue(value: i * threadId)
                 }
                 expectation.fulfill()
             }
@@ -875,9 +846,9 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let key = KeyValueStore<TestValue>.Key("mykey")
+        let key = BasicType64("mykey")
         store[key] = TestValue(value: 42)
 
         XCTAssertEqual(store[key]?.value, 42)
@@ -888,9 +859,9 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let key: KeyValueStore<TestValue>.Key = "literal_key"
+        let key: BasicType64 = "literal_key"
         store[key] = TestValue(value: 99)
 
         XCTAssertEqual(store[key]?.value, 99)
@@ -901,9 +872,9 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let key: KeyValueStore<TestValue>.Key = "test"
+        let key: BasicType64 = "test"
         let value = store[key, default: TestValue(value: 100)]
         XCTAssertEqual(value.value, 100)
 
@@ -919,7 +890,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let keys = [
             "🎉🌟💯🚀", // Emoji (4 bytes each)
@@ -929,11 +900,11 @@ final class KeyValueStoreTests: XCTestCase {
         ]
 
         for (index, key) in keys.enumerated() {
-            store[key] = TestValue(value: index)
+            store[BasicType64(key)] = TestValue(value: index)
         }
 
         for (index, key) in keys.enumerated() {
-            XCTAssertEqual(store[key]?.value, index, "Failed for key: \(key)")
+            XCTAssertEqual(store[BasicType64(key)]?.value, index, "Failed for key: \(key)")
         }
     }
 
@@ -942,20 +913,20 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Create a key with emoji that will be truncated at 64 bytes
         // Each emoji is 4 bytes, so 16 emoji = 64 bytes exactly
         let exactKey = String(repeating: "🎉", count: 16) // Exactly 64 bytes
-        store[exactKey] = TestValue(value: 1)
-        XCTAssertEqual(store[exactKey]?.value, 1)
+        store[BasicType64(exactKey)] = TestValue(value: 1)
+        XCTAssertEqual(store[BasicType64(exactKey)]?.value, 1)
 
         // 17 emoji = 68 bytes, should truncate to 16 emoji
         let overKey = String(repeating: "🎉", count: 17)
-        store[overKey] = TestValue(value: 2)
+        store[BasicType64(overKey)] = TestValue(value: 2)
 
         // The truncated version should match the 16-emoji key
-        XCTAssertEqual(store[exactKey]?.value, 2, "Truncation should respect UTF-8 boundaries")
+        XCTAssertEqual(store[BasicType64(exactKey)]?.value, 2, "Truncation should respect UTF-8 boundaries")
     }
 
     func testUTF8MixedASCIIAndMultibyte() throws {
@@ -963,7 +934,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let keys = [
             "user:123:🎉",
@@ -972,11 +943,11 @@ final class KeyValueStoreTests: XCTestCase {
         ]
 
         for (index, key) in keys.enumerated() {
-            store[key] = TestValue(value: index)
+            store[BasicType64(key)] = TestValue(value: index)
         }
 
         for (index, key) in keys.enumerated() {
-            XCTAssertEqual(store[key]?.value, index)
+            XCTAssertEqual(store[BasicType64(key)]?.value, index)
         }
     }
 
@@ -987,7 +958,7 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        var store: KeyValueStore<TestValue>? = try KeyValueStore(fileURL: url)
+        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
         // Add some data
         store?["key1"] = TestValue(value: 1)
@@ -1013,27 +984,27 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        var store: KeyValueStore<TestValue>? = try KeyValueStore(fileURL: url)
+        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
         // Add data with colliding keys to create tombstones
         let keys = Array(collidingKeys.prefix(4))
         for (index, key) in keys.enumerated() {
-            store?[key] = TestValue(value: index)
+            store?[BasicType64(key)] = TestValue(value: index)
         }
 
         // Delete some
-        store?[keys[1]] = nil
-        store?[keys[3]] = nil
+        store?[BasicType64(keys[1])] = nil
+        store?[BasicType64(keys[3])] = nil
 
         // Close and reopen
         store = nil
         store = try KeyValueStore(fileURL: url)
 
         // Verify persistence
-        XCTAssertEqual(store?[keys[0]]?.value, 0)
-        XCTAssertNil(store?[keys[1]])
-        XCTAssertEqual(store?[keys[2]]?.value, 2)
-        XCTAssertNil(store?[keys[3]])
+        XCTAssertEqual(store?[BasicType64(keys[0])]?.value, 0)
+        XCTAssertNil(store?[BasicType64(keys[1])])
+        XCTAssertEqual(store?[BasicType64(keys[2])]?.value, 2)
+        XCTAssertNil(store?[BasicType64(keys[3])])
     }
 
     func testMultipleReopenCycles() throws {
@@ -1042,7 +1013,7 @@ final class KeyValueStoreTests: XCTestCase {
         }
 
         for cycle in 0 ..< 5 {
-            let store = try KeyValueStore<TestValue>(fileURL: url)
+            let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
             if cycle == 0 {
                 // First cycle: add data
@@ -1061,12 +1032,12 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Insert many keys and verify distribution
         for i in 0 ..< 100 {
             let key = "key\(i)"
-            store[key] = TestValue(value: i)
+            store[BasicType64(key)] = TestValue(value: i)
 
             // We can't directly access the slot, but we can infer distribution
             // by checking how many collisions occur
@@ -1074,7 +1045,7 @@ final class KeyValueStoreTests: XCTestCase {
 
         // All keys should be retrievable (this tests distribution indirectly)
         for i in 0 ..< 100 {
-            XCTAssertEqual(store["key\(i)"]?.value, i)
+            XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
         }
     }
 
@@ -1083,19 +1054,19 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         let testKey = "consistency_test"
-        store[testKey] = TestValue(value: 123)
+        store[BasicType64(testKey)] = TestValue(value: 123)
 
         // Retrieve multiple times - should always work
         for _ in 0 ..< 100 {
-            XCTAssertEqual(store[testKey]?.value, 123)
+            XCTAssertEqual(store[BasicType64(testKey)]?.value, 123)
         }
 
         // Reopen and verify
-        let store2 = try KeyValueStore<TestValue>(fileURL: url)
-        XCTAssertEqual(store2[testKey]?.value, 123)
+        let store2 = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+        XCTAssertEqual(store2[BasicType64(testKey)]?.value, 123)
     }
 
     // MARK: - Load Factor Performance
@@ -1105,18 +1076,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
-        let itemCount = 32 // 25% of 128
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+        let itemCount = 64 // 25% of 256
 
         // Prepopulate
         for i in 0 ..< itemCount {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for _ in 0 ..< 100 {
                 for i in 0 ..< itemCount {
-                    _ = store["key\(i)"]
+                    _ = store[BasicType64("key\(i)")]
                 }
             }
         }
@@ -1127,18 +1098,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
-        let itemCount = 64 // 50% of 128
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+        let itemCount = 128 // 50% of 256
 
         // Prepopulate
         for i in 0 ..< itemCount {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for _ in 0 ..< 100 {
                 for i in 0 ..< itemCount {
-                    _ = store["key\(i)"]
+                    _ = store[BasicType64("key\(i)")]
                 }
             }
         }
@@ -1149,18 +1120,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
-        let itemCount = 96 // 75% of 128
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+        let itemCount = 192 // 75% of 256
 
         // Prepopulate
         for i in 0 ..< itemCount {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for _ in 0 ..< 100 {
                 for i in 0 ..< itemCount {
-                    _ = store["key\(i)"]
+                    _ = store[BasicType64("key\(i)")]
                 }
             }
         }
@@ -1171,18 +1142,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
-        let itemCount = 115 // 90% of 128
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+        let itemCount = 230 // 90% of 256
 
         // Prepopulate
         for i in 0 ..< itemCount {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for _ in 0 ..< 100 {
                 for i in 0 ..< itemCount {
-                    _ = store["key\(i)"]
+                    _ = store[BasicType64("key\(i)")]
                 }
             }
         }
@@ -1193,18 +1164,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
-        let itemCount = 127 // 99% of 128
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+        let itemCount = 253 // 99% of 256
 
         // Prepopulate
         for i in 0 ..< itemCount {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for _ in 0 ..< 100 {
                 for i in 0 ..< itemCount {
-                    _ = store["key\(i)"]
+                    _ = store[BasicType64("key\(i)")]
                 }
             }
         }
@@ -1217,17 +1188,17 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Use colliding keys to create maximum probe chain
         for (index, key) in collidingKeys.enumerated() {
-            store[key] = TestValue(value: index)
+            store[BasicType64(key)] = TestValue(value: index)
         }
 
         measure {
             for _ in 0 ..< 1000 {
                 for key in collidingKeys {
-                    _ = store[key]
+                    _ = store[BasicType64(key)]
                 }
             }
         }
@@ -1238,21 +1209,21 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         measure {
             // Insert and delete to create tombstones
             for i in 0 ..< 50 {
-                store["key\(i)"] = TestValue(value: i)
+                store[BasicType64("key\(i)")] = TestValue(value: i)
             }
 
             for i in 0 ..< 25 {
-                store["key\(i)"] = nil
+                store[BasicType64("key\(i)")] = nil
             }
 
             // Now lookups have to traverse tombstones
             for i in 25 ..< 50 {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
 
             // Clean up for next iteration
@@ -1265,17 +1236,17 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         // Sequential access
         measure {
             for i in 0 ..< 100 {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
         }
     }
@@ -1285,11 +1256,11 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         // Generate random sequence
@@ -1298,7 +1269,7 @@ final class KeyValueStoreTests: XCTestCase {
         // Random access
         measure {
             for i in indices {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
         }
     }
@@ -1310,16 +1281,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate with 1-5 char keys
         for i in 0 ..< 100 {
-            store["k\(i)"] = TestValue(value: i)
+            store[BasicType64("k\(i)")] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
-                _ = store["k\(i)"]
+                _ = store[BasicType64("k\(i)")]
             }
         }
     }
@@ -1329,16 +1300,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate with ~25 char keys
         for i in 0 ..< 100 {
-            store["medium_length_key_\(i)_test"] = TestValue(value: i)
+            store[BasicType64("medium_length_key_\(i)_test")] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
-                _ = store["medium_length_key_\(i)_test"]
+                _ = store[BasicType64("medium_length_key_\(i)_test")]
             }
         }
     }
@@ -1348,18 +1319,18 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate with 64 char keys
         for i in 0 ..< 100 {
             let key = String(format: "very_long_key_name_with_lots_of_characters_item_%04d_end", i)
-            store[key] = TestValue(value: i)
+            store[BasicType64(key)] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
                 let key = String(format: "very_long_key_name_with_lots_of_characters_item_%04d_end", i)
-                _ = store[key]
+                _ = store[BasicType64(key)]
             }
         }
     }
@@ -1372,10 +1343,10 @@ final class KeyValueStoreTests: XCTestCase {
         }
 
         measure {
-            var store: KeyValueStore<TestValue>? = try? KeyValueStore(fileURL: url)
+            var store: KeyValueStore<BasicType64, TestValue>? = try? KeyValueStore(fileURL: url)
 
             for i in 0 ..< 50 {
-                store?["key\(i)"] = TestValue(value: i)
+                store?[BasicType64("key\(i)")] = TestValue(value: i)
             }
 
             store = nil
@@ -1393,10 +1364,10 @@ final class KeyValueStoreTests: XCTestCase {
         }
 
         measure {
-            let store = try! KeyValueStore<TestValue>(fileURL: url)
+            let store = try! KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
             for i in 0 ..< 128 {
-                store["key\(i)"] = TestValue(value: i)
+                store[BasicType64("key\(i)")] = TestValue(value: i)
             }
 
             try? FileManager.default.removeItem(at: url)
@@ -1410,16 +1381,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Prepopulate
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         measure {
             for i in 0 ..< 100 {
-                _ = store.contains("key\(i)")
+                _ = store.contains(BasicType64("key\(i)"))
             }
         }
     }
@@ -1429,12 +1400,12 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         measure {
             // Prepopulate
             for i in 0 ..< 100 {
-                store["key\(i)"] = TestValue(value: i)
+                store[BasicType64("key\(i)")] = TestValue(value: i)
             }
 
             store.removeAll()
@@ -1448,16 +1419,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Fill store
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         // Delete half to create tombstones
         for i in 0 ..< 50 {
-            store["key\(i)"] = nil
+            store[BasicType64("key\(i)")] = nil
         }
 
         // Compact should clean up tombstones
@@ -1465,7 +1436,7 @@ final class KeyValueStoreTests: XCTestCase {
 
         // Verify remaining items are still accessible
         for i in 50 ..< 100 {
-            XCTAssertEqual(store["key\(i)"]?.value, i)
+            XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
         }
     }
 
@@ -1474,25 +1445,25 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Insert and delete many times to trigger auto-compact
         for cycle in 0 ..< 10 {
             for i in 0 ..< 20 {
-                store["temp\(i)"] = TestValue(value: cycle)
+                store[BasicType64("temp\(i)")] = TestValue(value: cycle)
             }
             for i in 0 ..< 20 {
-                store["temp\(i)"] = nil
+                store[BasicType64("temp\(i)")] = nil
             }
         }
 
         // Store should still work correctly after auto-compaction
         for i in 0 ..< 50 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         for i in 0 ..< 50 {
-            XCTAssertEqual(store["key\(i)"]?.value, i)
+            XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
         }
     }
 
@@ -1501,14 +1472,14 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        var store: KeyValueStore<TestValue>? = try KeyValueStore(fileURL: url)
+        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
         // Create data with tombstones
         for i in 0 ..< 80 {
-            store?["key\(i)"] = TestValue(value: i)
+            store?[BasicType64("key\(i)")] = TestValue(value: i)
         }
         for i in 0 ..< 40 {
-            store?["key\(i)"] = nil
+            store?[BasicType64("key\(i)")] = nil
         }
 
         // Compact
@@ -1520,7 +1491,7 @@ final class KeyValueStoreTests: XCTestCase {
 
         // Verify data survived compaction
         for i in 40 ..< 80 {
-            XCTAssertEqual(store?["key\(i)"]?.value, i, "Failed for key\(i)")
+            XCTAssertEqual(store?[BasicType64("key\(i)")]?.value, i, "Failed for key\(i)")
         }
     }
 
@@ -1529,23 +1500,23 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Fill with items
         for i in 0 ..< 100 {
-            store["key\(i)"] = TestValue(value: i)
+            store[BasicType64("key\(i)")] = TestValue(value: i)
         }
 
         // Delete many to create tombstones
         for i in 0 ..< 80 {
-            store["key\(i)"] = nil
+            store[BasicType64("key\(i)")] = nil
         }
 
         // Measure lookup time with tombstones
         let startWithTombstones = Date()
         for _ in 0 ..< 1000 {
             for i in 80 ..< 100 {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
         }
         let timeWithTombstones = Date().timeIntervalSince(startWithTombstones)
@@ -1557,7 +1528,7 @@ final class KeyValueStoreTests: XCTestCase {
         let startAfterCompact = Date()
         for _ in 0 ..< 1000 {
             for i in 80 ..< 100 {
-                _ = store["key\(i)"]
+                _ = store[BasicType64("key\(i)")]
             }
         }
         let timeAfterCompact = Date().timeIntervalSince(startAfterCompact)
@@ -1574,16 +1545,16 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         // Rapid insert/delete cycles
         for cycle in 0 ..< 10 {
             for i in 0 ..< 50 {
-                store["key\(i)"] = TestValue(value: cycle * 100 + i)
+                store[BasicType64("key\(i)")] = TestValue(value: cycle * 100 + i)
             }
 
             for i in 0 ..< 50 {
-                store["key\(i)"] = nil
+                store[BasicType64("key\(i)")] = nil
             }
         }
     }
@@ -1593,12 +1564,12 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         for cycle in 0 ..< 5 {
             // Fill
             for i in 0 ..< 100 {
-                store["key\(i)"] = TestValue(value: cycle * 100 + i)
+                store[BasicType64("key\(i)")] = TestValue(value: cycle * 100 + i)
             }
 
             // Clear
@@ -1611,15 +1582,15 @@ final class KeyValueStoreTests: XCTestCase {
             var value: Int
         }
 
-        let store = try KeyValueStore<TestValue>(fileURL: url)
+        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
         for i in 0 ..< 1000 {
             if i % 3 == 0 {
-                store["key\(i % 100)"] = TestValue(value: i)
+                store[BasicType64("key\(i % 100)")] = TestValue(value: i)
             } else if i % 3 == 1 {
-                _ = store["key\(i % 100)"]
+                _ = store[BasicType64("key\(i % 100)")]
             } else {
-                _ = store.contains("key\(i % 100)")
+                _ = store.contains(BasicType64("key\(i % 100)"))
             }
         }
     }
@@ -1640,17 +1611,17 @@ final class KeyValueStoreTests: XCTestCase {
             var c: Int32
         }
 
-        let store1 = try KeyValueStore<AlignedValue1>(fileURL: url.appendingPathExtension("align1"))
+        let store1 = try KeyValueStore<BasicType64, AlignedValue1>(fileURL: url.appendingPathExtension("align1"))
         store1["key"] = AlignedValue1(a: 42)
         XCTAssertEqual(store1["key"]?.a, 42)
         try? FileManager.default.removeItem(at: url.appendingPathExtension("align1"))
 
-        let store8 = try KeyValueStore<AlignedValue8>(fileURL: url.appendingPathExtension("align8"))
+        let store8 = try KeyValueStore<BasicType64, AlignedValue8>(fileURL: url.appendingPathExtension("align8"))
         store8["key"] = AlignedValue8(a: 12_345_678)
         XCTAssertEqual(store8["key"]?.a, 12_345_678)
         try? FileManager.default.removeItem(at: url.appendingPathExtension("align8"))
 
-        let storeMixed = try KeyValueStore<AlignedValueMixed>(fileURL: url.appendingPathExtension("mixed"))
+        let storeMixed = try KeyValueStore<BasicType64, AlignedValueMixed>(fileURL: url.appendingPathExtension("mixed"))
         storeMixed["key"] = AlignedValueMixed(a: 1, b: 2, c: 3)
         let val = storeMixed["key"]
         XCTAssertEqual(val?.a, 1)
