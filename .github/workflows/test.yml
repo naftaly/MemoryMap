@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  workflow_call: {}
+  workflow_dispatch: {}
+  pull_request: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.platform }}
+    runs-on: macos-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macOS, iOS, tvOS, watchOS, visionOS]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Build and Test
+      uses: mxcl/xcodebuild@v3
+      with:
+        platform: ${{ matrix.platform }}
+        action: test
