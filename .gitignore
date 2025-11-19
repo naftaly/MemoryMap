@@ -62,3 +62,6 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 .DS_Store
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+PERFORMANCE_OPTIMIZATIONS.md
+.claude/settings.local.json
+CLAUDE.md

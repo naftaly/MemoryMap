@@ -2,12 +2,14 @@ name: Benchmarks
 
 on:
   pull_request:
-  push:
-    branches: main
 
 permissions:
   contents: read
   pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   benchmark:
@@ -53,12 +55,12 @@ jobs:
         matches = re.findall(pattern, content)
 
         # Start markdown output
-        output = ["# 🚀 KeyValueStore Performance Benchmarks\n"]
-        output.append("*Optimized with double hashing, memcmp equality, and derived hash2*\n")
+        output = ["# 🚀 MemoryMap Performance Benchmarks\n"]
+        output.append("*256-entry capacity with double hashing, `@inline(__always)` optimizations*\n")
         output.append(f"**Test Hardware:** {system_info}\n")
 
         # Core operations section
-        output.append("## Core Operations (100 ops)\n")
+        output.append("## Core Operations\n")
         output.append("| Operation | Time | Per-Op | Main Thread |")
         output.append("|-----------|------|--------|-------------|")
 
@@ -67,8 +69,9 @@ jobs:
             "LookupHit": ("Lookup (hit)", 100),
             "LookupMiss": ("Lookup (miss)", 100),
             "Update": ("Update", 100),
-            "Remove": ("Remove", 200),
+            "Remove": ("Remove (insert+delete)", 200),
             "Contains": ("Contains", 100),
+            "MixedOperations": ("Mixed operations", 200),
         }
 
         for test_name, avg_time in matches:
@@ -98,43 +101,42 @@ jobs:
                 output.append(f"| {op_name} | {total_ms:.1f}ms | {per_op} | {status} |")
 
         # Load factor performance
-        output.append("\n## Load Factor Performance (10,000 lookups)\n")
-        output.append("| Load % | Time | Degradation | Status |")
-        output.append("|--------|------|-------------|--------|")
+        output.append("\n## Load Factor Performance\n")
+        output.append("| Load % | Lookups | Time | Per-Lookup | Status |")
+        output.append("|--------|---------|------|------------|--------|")
 
         load_factors = {
-            "LoadFactor25Percent": ("25%", None),
-            "LoadFactor50Percent": ("50%", None),
-            "LoadFactor75Percent": ("75%", None),
-            "LoadFactor90Percent": ("90%", None),
-            "LoadFactor99Percent": ("99%", None),
+            "LoadFactor25Percent": ("25%", 64, 6400),
+            "LoadFactor50Percent": ("50%", 128, 12800),
+            "LoadFactor75Percent": ("75%", 192, 19200),
+            "LoadFactor90Percent": ("90%", 230, 23000),
+            "LoadFactor99Percent": ("99%", 253, 25300),
         }
 
-        baseline = None
+        baseline_per_lookup = None
         for test_name, avg_time in matches:
             if test_name in load_factors:
                 avg_time_f = float(avg_time)
-                load_name = load_factors[test_name][0]
-
-                if baseline is None:
-                    baseline = avg_time_f
-                    degradation = "baseline"
-                else:
-                    ratio = avg_time_f / baseline
-                    degradation = f"{ratio:.1f}x"
+                load_name, keys, lookups = load_factors[test_name]
 
                 total_ms = avg_time_f * 1000
+                per_lookup_us = (avg_time_f * 1_000_000) / lookups
 
-                if avg_time_f < 0.050:
+                if baseline_per_lookup is None:
+                    baseline_per_lookup = per_lookup_us
+
+                # Status based on per-lookup time
+                if per_lookup_us < 15:
                     status = "✅ Excellent"
-                elif avg_time_f < 0.100:
+                elif per_lookup_us < 30:
                     status = "✅ Good"
-                elif avg_time_f < 0.150:
+                elif per_lookup_us < 50:
                     status = "⚠️ OK"
                 else:
                     status = "❌ Slow"
 
-                output.append(f"| {load_name} | {total_ms:.0f}ms | {degradation} | {status} |")
+                lookups_str = f"{lookups:,}"
+                output.append(f"| {load_name} | {lookups_str} | {total_ms:.0f}ms | {per_lookup_us:.1f} μs | {status} |")
 
         # Key length impact
         output.append("\n## Key Length Impact (100 ops)\n")
@@ -157,13 +159,100 @@ jobs:
 
                 output.append(f"| {key_name} | {total_ms:.1f}ms | {per_op_us:.1f} μs |")
 
-        # Main thread budget
-        output.append("\n## Main Thread Guidelines")
+        # Bulk operations
+        output.append("\n## Bulk Operations\n")
+        output.append("| Operation | Time | Description |")
+        output.append("|-----------|------|-------------|")
+
+        bulk_ops = {
+            "Count": ("Count (100 entries)", None),
+            "Keys": ("Keys iteration (100 entries)", None),
+            "ToDictionary": ("Convert to Dictionary (100 entries)", None),
+            "RemoveAll": ("Remove all entries", None),
+            "LargeBatchWrite": ("Large batch write", None),
+        }
+
+        for test_name, avg_time in matches:
+            if test_name in bulk_ops:
+                avg_time_f = float(avg_time)
+                op_name = bulk_ops[test_name][0]
+                total_ms = avg_time_f * 1000
+
+                if total_ms < 10:
+                    status = "✅ Excellent"
+                elif total_ms < 50:
+                    status = "✅ Good"
+                elif total_ms < 100:
+                    status = "⚠️ OK"
+                else:
+                    status = "❌ Review"
+
+                output.append(f"| {op_name} | {total_ms:.1f}ms | {status} |")
+
+        # Stress tests
+        output.append("\n## Stress & Edge Cases\n")
+        output.append("| Test | Time | Status |")
+        output.append("|------|------|--------|")
+
+        stress_tests = {
+            "WorstCaseProbeChain": "Worst-case probe chain",
+            "ManyTombstones": "Many tombstones",
+            "SequentialVsRandom": "Sequential vs random access",
+            "RandomAccess": "Random access pattern",
+        }
+
+        for test_name, avg_time in matches:
+            if test_name in stress_tests:
+                avg_time_f = float(avg_time)
+                test_desc = stress_tests[test_name]
+                total_ms = avg_time_f * 1000
+
+                if total_ms < 50:
+                    status = "✅ Good"
+                elif total_ms < 100:
+                    status = "⚠️ OK"
+                else:
+                    status = "❌ Slow"
+
+                output.append(f"| {test_desc} | {total_ms:.0f}ms | {status} |")
+
+        # Persistence operations
+        output.append("\n## Persistence\n")
+        output.append("| Operation | Time | Status |")
+        output.append("|-----------|------|--------|")
+
+        persistence_ops = {
+            "WriteCloseReopen": "Write, close, reopen",
+        }
+
+        for test_name, avg_time in matches:
+            if test_name in persistence_ops:
+                avg_time_f = float(avg_time)
+                op_name = persistence_ops[test_name]
+                total_ms = avg_time_f * 1000
+
+                if total_ms < 50:
+                    status = "✅ Excellent"
+                elif total_ms < 100:
+                    status = "✅ Good"
+                else:
+                    status = "⚠️ OK"
+
+                output.append(f"| {op_name} | {total_ms:.0f}ms | {status} |")
+
+        # Main thread budget and capacity info
+        output.append("\n## Performance Characteristics")
+        output.append("### Main Thread Budget")
         output.append("- ✅ **Excellent**: <10ms - Perfect for UI interactions")
         output.append("- ✅ **Good**: 10-50ms - Acceptable for most operations")
         output.append("- ⚠️ **OK**: 50-100ms - Use with caution on main thread")
         output.append("- ❌ **Review**: >100ms - Consider background thread")
-        output.append("\n*Target: 16.67ms per frame @ 60fps, 8.33ms @ 120fps*")
+        output.append("\n*Target: 16.67ms/frame @ 60fps, 8.33ms/frame @ 120fps*")
+        output.append("\n### Capacity & Optimization")
+        output.append("- **Fixed capacity**: 256 entries")
+        output.append("- **Recommended usage**: ≤200 keys for optimal performance")
+        output.append("- **Memory footprint**: ~306KB per store")
+        output.append("- **Key optimizations**: Double hashing, `@inline(__always)`, direct buffer access via `withUnsafeBytes`")
 
         # Summary
         total_tests = len(re.findall(r"Test Case.*passed", content))

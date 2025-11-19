@@ -28,7 +28,7 @@ import os
 /// crash-resilient storage, with thread-safe access.
 @available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public class MemoryMap<T>: @unchecked Sendable {
-    /// The URL of the memory-mapped file.
+    /// The URL of the memory-mapped file backing this storage
     public let url: URL
 
     /// Initializes a memory-mapped file for the given POD type `T`.
@@ -41,7 +41,7 @@ public class MemoryMap<T>: @unchecked Sendable {
     ///   - fileURL: The file's location on disk.
     ///
     /// Note: `T` must be a Plain Old Data (POD) type. This is validated at runtime.
-    public init(fileURL: URL) throws {
+    public init(fileURL: URL, lock: MemoryMapLock = DefaultMemoryMapLock()) throws {
         // only POD types are allowed, so basically
         // structs with built-in types (aka. trivial).
         assert(_isPOD(T.self), "\(type(of: T.self)) is a non-trivial Type.")
@@ -53,6 +53,7 @@ public class MemoryMap<T>: @unchecked Sendable {
             throw MemoryMapError.invalidSize
         }
 
+        self.lock = lock
         url = fileURL
         container = try Self._mmap(url, size: MemoryLayout<MemoryMapContainer>.stride)
         _s = withUnsafeMutablePointer(to: &container.pointee._s) {
@@ -201,24 +202,30 @@ public class MemoryMap<T>: @unchecked Sendable {
         var _s: T
     }
 
-    private let lock = OSAllocatedUnfairLock()
+    private let lock: MemoryMapLock
     private let container: UnsafeMutablePointer<MemoryMapContainer>
     private let _s: UnsafeMutablePointer<T>
 }
 
+/// Errors that can occur during memory-mapped file operations
 public enum MemoryMapError: Error {
-    /// A unix error of some sort (open, mmap, ...).
+    /// A Unix system call failed (e.g., open, mmap, fstat, ftruncate)
+    ///
+    /// - Parameters:
+    ///   - errno: The Unix error code
+    ///   - operation: The name of the operation that failed
+    ///   - url: The file URL that was being accessed
     case unix(Int32, String, URL)
 
-    /// Memory layout alignment is incorrect.
+    /// The memory-mapped region has incorrect alignment for the data type
     case alignment
 
-    /// `.bindMemory` failed.
+    /// Failed to bind the memory-mapped region to the expected type
     case failedBind
 
-    /// The header magic number is wrong.
+    /// The file doesn't have the expected magic number header (not a valid MemoryMap file)
     case notMemoryMap
 
-    /// The struct backing the map is too big.
+    /// The struct size exceeds the maximum allowed size (1MB)
     case invalidSize
 }
