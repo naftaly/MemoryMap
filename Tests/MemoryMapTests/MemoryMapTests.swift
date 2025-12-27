@@ -100,7 +100,7 @@ final class MemoryMapTests: XCTestCase {
         let memoryMap = try MemoryMap<TestStruct>(fileURL: url)
 
         let expectation = XCTestExpectation(description: "Concurrent writes complete")
-        expectation.expectedFulfillmentCount = 10
+        expectation.expectedFulfillmentCount = 1000
 
         DispatchQueue.concurrentPerform(iterations: 1000) { index in
             memoryMap.get = TestStruct(intValue: index, doubleValue: Double(index))

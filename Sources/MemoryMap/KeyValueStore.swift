@@ -93,6 +93,7 @@ public class KeyValueStore<Key: BasicTypeCompliance, Value>: @unchecked Sendable
     ///
     /// - Note: Value must be a POD (Plain Old Data) type with no references or object pointers.
     public init(fileURL: URL, lock: MemoryMapLock = DefaultMemoryMapLock()) throws {
+        precondition(_isPOD(Value.self), "Value type must be POD (Plain Old Data)")
         memoryMap = try MemoryMap<KeyValueStoreStorage<Key, Value>>(fileURL: fileURL, lock: lock)
     }
 

@@ -28,6 +28,12 @@ import os
 /// crash-resilient storage, with thread-safe access.
 @available(macOS 13.0, iOS 16.0, tvOS 16.0, watchOS 9.0, visionOS 2.0, *)
 public class MemoryMap<T>: @unchecked Sendable {
+    /// Maximum allowed size for the memory-mapped region in bytes (1MB)
+    public static var maxFileSize: Int { 1024 * 1024 }
+
+    /// Magic number used to identify valid MemoryMap files (0xB10C = "BLOC")
+    private static var magic: UInt64 { 0xB10C }
+
     /// The URL of the memory-mapped file backing this storage
     public let url: URL
 
@@ -47,9 +53,7 @@ public class MemoryMap<T>: @unchecked Sendable {
         assert(_isPOD(T.self), "\(type(of: T.self)) is a non-trivial Type.")
 
         // Ensure we're not creating a huge file.
-        // Maximum allowed size for the memory-mapped region in bytes (default: 1MB)
-        let maxSize = 1024 * 1024
-        guard MemoryLayout<MemoryMapContainer>.stride <= maxSize else {
+        guard MemoryLayout<MemoryMapContainer>.stride <= Self.maxFileSize else {
             throw MemoryMapError.invalidSize
         }
 
@@ -133,7 +137,7 @@ public class MemoryMap<T>: @unchecked Sendable {
         // open and ensure we create if non-existant.
         // close on end of scope
         let fd = open(fileURL.path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)
-        guard fd > 0 else {
+        guard fd != -1 else {
             throw MemoryMapError.unix(errno, "open", fileURL)
         }
         defer { close(fd) }
@@ -173,17 +177,13 @@ public class MemoryMap<T>: @unchecked Sendable {
             throw MemoryMapError.failedBind
         }
 
-        // This is our default magic number that
-        // should be at the top of every container.
-        let defaultMagic: UInt64 = 0xB10C
-
-        // If the file doesn't exists, set it up with defaults
+        // If the file doesn't exist, set it up with defaults
         if !fileExists {
-            pointer.pointee.magic = defaultMagic
+            pointer.pointee.magic = magic
         }
 
-        // ensure magic
-        guard pointer.pointee.magic == defaultMagic else {
+        // Ensure magic number matches
+        guard pointer.pointee.magic == magic else {
             unmapOnDefer = true
             throw MemoryMapError.notMemoryMap
         }
