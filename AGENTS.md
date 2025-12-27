@@ -1,8 +1,8 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance for AI coding agents working in this repository.
 
-**Note to Claude:** As you work in this codebase, please keep this file up to date. Add new findings, architectural insights, gotchas, or patterns you discover. Fix any errors or outdated information. This is a living document that should evolve with the codebase.
+**Note:** Keep this file up to date as you work. Add new findings, architectural insights, gotchas, or patterns you discover. Fix any errors or outdated information. This is a living document that should evolve with the codebase.
 
 ## Project Overview
 
@@ -84,8 +84,9 @@ swift build
 # Run all tests
 swift test
 
-# Run specific test
+# Run specific test (by name or with class prefix)
 swift test --filter testPerformanceInsert
+swift test --filter KeyValueStoreTests.testSetAndGet
 
 # Run performance benchmarks only
 swift test --filter testPerformance
@@ -138,7 +139,7 @@ Lookup performance measured with 10,000+ lookups at various load factors:
 - All hot paths access raw storage buffer once using `withUnsafeBytes`/`withUnsafeMutableBytes`
 - Hash collisions are minimized by double hashing with FNV-1a hash1 and guaranteed-odd hash2
 
-### Recent Optimizations (2025-11)
+### Optimization Notes
 - **Eliminated subscript overhead:** All hot paths now access raw storage buffer once using `withUnsafeBytes`/`withUnsafeMutableBytes` instead of repeated subscript calls
 - **Pattern:** Access `storage.entries.storage` once, bind to typed pointer, then iterate/probe using direct pointer indexing
 - **Results:** Achieved consistent ~11-12μs per lookup across all load factors:
@@ -182,9 +183,37 @@ let store = try KeyValueStore<BasicType64, MyValue>(fileURL: url, lock: NoLock()
 - Changes write immediately to disk (MAP_SHARED)
 - No need to call `msync()` - OS handles flushing
 
+## Code Style
+
+### Naming Conventions
+- **Types:** PascalCase (`KeyValueStore`, `BasicType64`, `MemoryMapError`)
+- **Functions/Methods:** camelCase (`withLockedStorage`, `setValue`)
+- **Variables/Properties:** camelCase (`memoryMap`, `fileURL`)
+- **Private members:** Prefix with underscore (`_s`, `_hash1()`)
+- **Generic parameters:** Single letter or descriptive (`T`, `Key`, `Value`, `Storage`)
+
+### Documentation
+- Use `///` for documentation comments on public APIs
+- Include code examples in ```` ```swift ```` blocks for complex APIs
+- Document parameters with `- Parameters:` and throws with `- Throws:`
+- Mark sections with `// MARK: - Section Name`
+
+### Error Handling
+- Define errors as enums conforming to `Error`
+- Subscript setters fail silently; use explicit methods (e.g., `setValue`) for error handling
+
+### Imports
+```swift
+import Foundation
+import os
+```
+
 ## Testing Notes
 
 - Performance tests use `measure { }` blocks, report average time
 - Tests create temporary files in system temp directory
 - KeyValueStore tests verify both correctness and performance characteristics
 - Load factor tests ensure consistent performance from 25% to 99% capacity
+- Test classes end with `Tests` (`KeyValueStoreTests`)
+- Test methods start with `test` (`testSetAndGet`)
+- Performance tests start with `testPerformance` (`testPerformanceInsert`)
