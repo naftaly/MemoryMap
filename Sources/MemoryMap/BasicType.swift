@@ -26,7 +26,8 @@ import Foundation
 ///
 /// Combines Hashable, Sendable, and custom equality/hashing protocols for efficient
 /// memory-mapped storage with double hashing.
-public typealias BasicTypeCompliance = Hashable & Sendable & _BasicTypeEquatable & _BasicTypeHashable
+public typealias BasicTypeCompliance = Hashable & Sendable & _BasicTypeEquatable
+  & _BasicTypeHashable & BitwiseCopyable
 
 /// A type-safe wrapper for storing basic Swift types with 1020 bytes of storage.
 ///
@@ -67,304 +68,304 @@ public typealias BasicTypeNumber = BasicType8
 /// ```
 @frozen
 public struct _BasicType<Storage: ByteStorage>: BasicTypeCompliance {
-    public typealias StorageInfo = Storage
+  public typealias StorageInfo = Storage
 
-    /// The type of value stored in this BasicType instance.
-    public enum Kind: UInt8, Sendable {
-        case int
-        case int8
-        case int16
-        case int32
-        case int64
-        case uint
-        case uint8
-        case uint16
-        case uint32
-        case uint64
-        case double
-        case float
-        case bool
-        case string
-    }
+  /// The type of value stored in this BasicType instance.
+  public enum Kind: UInt8, Sendable, BitwiseCopyable {
+    case int
+    case int8
+    case int16
+    case int32
+    case int64
+    case uint
+    case uint8
+    case uint16
+    case uint32
+    case uint64
+    case double
+    case float
+    case bool
+    case string
+  }
 
-    /// The type of value stored
-    public let kind: Kind
+  /// The type of value stored
+  public let kind: Kind
 
-    /// The number of bytes used in storage
-    public let length: UInt16
+  /// The number of bytes used in storage
+  public let length: UInt16
 
-    /// Raw storage buffer
-    let value: StorageInfo.Storage
+  /// Raw storage buffer
+  let value: StorageInfo.Storage
 
-    public init(kind: Kind, length: UInt16, value: StorageInfo.Storage) {
-        self.kind = kind
-        self.length = length
-        self.value = value
-    }
+  public init(kind: Kind, length: UInt16, value: StorageInfo.Storage) {
+    self.kind = kind
+    self.length = length
+    self.value = value
+  }
 }
 
 // MARK: - Initializers
 
-public extension _BasicType {
-    @inline(__always)
-    init(_ integer: Int) {
-        self.init(
-            kind: .int,
-            length: UInt16(MemoryLayout<Int>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+extension _BasicType {
+  @inline(__always)
+  public init(_ integer: Int) {
+    self.init(
+      kind: .int,
+      length: UInt16(MemoryLayout<Int>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: Int8) {
-        self.init(
-            kind: .int8,
-            length: UInt16(MemoryLayout<Int8>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: Int8) {
+    self.init(
+      kind: .int8,
+      length: UInt16(MemoryLayout<Int8>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: Int16) {
-        self.init(
-            kind: .int16,
-            length: UInt16(MemoryLayout<Int16>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: Int16) {
+    self.init(
+      kind: .int16,
+      length: UInt16(MemoryLayout<Int16>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: Int32) {
-        self.init(
-            kind: .int32,
-            length: UInt16(MemoryLayout<Int32>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: Int32) {
+    self.init(
+      kind: .int32,
+      length: UInt16(MemoryLayout<Int32>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: Int64) {
-        self.init(
-            kind: .int64,
-            length: UInt16(MemoryLayout<Int64>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: Int64) {
+    self.init(
+      kind: .int64,
+      length: UInt16(MemoryLayout<Int64>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: UInt) {
-        self.init(
-            kind: .uint,
-            length: UInt16(MemoryLayout<UInt>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: UInt) {
+    self.init(
+      kind: .uint,
+      length: UInt16(MemoryLayout<UInt>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: UInt8) {
-        self.init(
-            kind: .uint8,
-            length: UInt16(MemoryLayout<UInt8>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: UInt8) {
+    self.init(
+      kind: .uint8,
+      length: UInt16(MemoryLayout<UInt8>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: UInt16) {
-        self.init(
-            kind: .uint16,
-            length: UInt16(MemoryLayout<UInt16>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: UInt16) {
+    self.init(
+      kind: .uint16,
+      length: UInt16(MemoryLayout<UInt16>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: UInt32) {
-        self.init(
-            kind: .uint32,
-            length: UInt16(MemoryLayout<UInt32>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: UInt32) {
+    self.init(
+      kind: .uint32,
+      length: UInt16(MemoryLayout<UInt32>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ integer: UInt64) {
-        self.init(
-            kind: .uint64,
-            length: UInt16(MemoryLayout<UInt64>.stride),
-            value: StorageInfo.store(integer)
-        )
-    }
+  @inline(__always)
+  public init(_ integer: UInt64) {
+    self.init(
+      kind: .uint64,
+      length: UInt16(MemoryLayout<UInt64>.stride),
+      value: StorageInfo.store(integer)
+    )
+  }
 
-    @inline(__always)
-    init(_ double: Double) {
-        self.init(
-            kind: .double,
-            length: UInt16(MemoryLayout<Double>.stride),
-            value: StorageInfo.store(double)
-        )
-    }
+  @inline(__always)
+  public init(_ double: Double) {
+    self.init(
+      kind: .double,
+      length: UInt16(MemoryLayout<Double>.stride),
+      value: StorageInfo.store(double)
+    )
+  }
 
-    @inline(__always)
-    init(_ float: Float) {
-        self.init(
-            kind: .float,
-            length: UInt16(MemoryLayout<Float>.stride),
-            value: StorageInfo.store(float)
-        )
-    }
+  @inline(__always)
+  public init(_ float: Float) {
+    self.init(
+      kind: .float,
+      length: UInt16(MemoryLayout<Float>.stride),
+      value: StorageInfo.store(float)
+    )
+  }
 
-    @inline(__always)
-    init(_ bool: Bool) {
-        self.init(
-            kind: .bool,
-            length: UInt16(MemoryLayout<Bool>.stride),
-            value: StorageInfo.store(bool)
-        )
-    }
+  @inline(__always)
+  public init(_ bool: Bool) {
+    self.init(
+      kind: .bool,
+      length: UInt16(MemoryLayout<Bool>.stride),
+      value: StorageInfo.store(bool)
+    )
+  }
 
-    @inline(__always)
-    init(throwing string: String) throws {
-        let info = StorageInfo.store(string)
-        guard info.fits else {
-            throw KeyValueStoreError.tooLarge
-        }
-        self.init(
-            kind: .string,
-            length: UInt16(info.length),
-            value: info.storage
-        )
+  @inline(__always)
+  public init(throwing string: String) throws {
+    let info = StorageInfo.store(string)
+    guard info.fits else {
+      throw KeyValueStoreError.tooLarge
     }
+    self.init(
+      kind: .string,
+      length: UInt16(info.length),
+      value: info.storage
+    )
+  }
 
-    @inline(__always)
-    init(_ string: String) {
-        let info = StorageInfo.store(string)
-        self.init(
-            kind: .string,
-            length: UInt16(info.length),
-            value: info.storage
-        )
-    }
+  @inline(__always)
+  public init(_ string: String) {
+    let info = StorageInfo.store(string)
+    self.init(
+      kind: .string,
+      length: UInt16(info.length),
+      value: info.storage
+    )
+  }
 }
 
 // MARK: - ExpressibleBy ...
 
 extension _BasicType: ExpressibleByStringLiteral {
-    public init(stringLiteral value: String) {
-        self.init(value)
-    }
+  public init(stringLiteral value: String) {
+    self.init(value)
+  }
 }
 
 extension _BasicType: ExpressibleByFloatLiteral {
-    public init(floatLiteral value: Double) {
-        self.init(value)
-    }
+  public init(floatLiteral value: Double) {
+    self.init(value)
+  }
 }
 
 extension _BasicType: ExpressibleByBooleanLiteral {
-    public init(booleanLiteral value: Bool) {
-        self.init(value)
-    }
+  public init(booleanLiteral value: Bool) {
+    self.init(value)
+  }
 }
 
 extension _BasicType: ExpressibleByIntegerLiteral {
-    public init(integerLiteral value: Int) {
-        self.init(value)
-    }
+  public init(integerLiteral value: Int) {
+    self.init(value)
+  }
 }
 
 // MARK: - Value Extraction
 
-public extension _BasicType {
-    /// Extracts the value as an Int.
-    ///
-    /// - Returns: The stored Int value, or `0` if this instance doesn't contain an Int
-    @inline(__always)
-    var intValue: Int {
-        guard kind == .int else { return 0 }
-        return StorageInfo.extract(Int.self, from: value)
-    }
+extension _BasicType {
+  /// Extracts the value as an Int.
+  ///
+  /// - Returns: The stored Int value, or `0` if this instance doesn't contain an Int
+  @inline(__always)
+  public var intValue: Int {
+    guard kind == .int else { return 0 }
+    return StorageInfo.extract(Int.self, from: value)
+  }
 
-    @inline(__always)
-    var int8Value: Int8 {
-        guard kind == .int8 else { return 0 }
-        return StorageInfo.extract(Int8.self, from: value)
-    }
+  @inline(__always)
+  public var int8Value: Int8 {
+    guard kind == .int8 else { return 0 }
+    return StorageInfo.extract(Int8.self, from: value)
+  }
 
-    @inline(__always)
-    var int16Value: Int16 {
-        guard kind == .int16 else { return 0 }
-        return StorageInfo.extract(Int16.self, from: value)
-    }
+  @inline(__always)
+  public var int16Value: Int16 {
+    guard kind == .int16 else { return 0 }
+    return StorageInfo.extract(Int16.self, from: value)
+  }
 
-    @inline(__always)
-    var int32Value: Int32 {
-        guard kind == .int32 else { return 0 }
-        return StorageInfo.extract(Int32.self, from: value)
-    }
+  @inline(__always)
+  public var int32Value: Int32 {
+    guard kind == .int32 else { return 0 }
+    return StorageInfo.extract(Int32.self, from: value)
+  }
 
-    @inline(__always)
-    var int64Value: Int64 {
-        guard kind == .int64 else { return 0 }
-        return StorageInfo.extract(Int64.self, from: value)
-    }
+  @inline(__always)
+  public var int64Value: Int64 {
+    guard kind == .int64 else { return 0 }
+    return StorageInfo.extract(Int64.self, from: value)
+  }
 
-    @inline(__always)
-    var uintValue: UInt {
-        guard kind == .uint else { return 0 }
-        return StorageInfo.extract(UInt.self, from: value)
-    }
+  @inline(__always)
+  public var uintValue: UInt {
+    guard kind == .uint else { return 0 }
+    return StorageInfo.extract(UInt.self, from: value)
+  }
 
-    @inline(__always)
-    var uint8Value: UInt8 {
-        guard kind == .uint8 else { return 0 }
-        return StorageInfo.extract(UInt8.self, from: value)
-    }
+  @inline(__always)
+  public var uint8Value: UInt8 {
+    guard kind == .uint8 else { return 0 }
+    return StorageInfo.extract(UInt8.self, from: value)
+  }
 
-    @inline(__always)
-    var uint16Value: UInt16 {
-        guard kind == .uint16 else { return 0 }
-        return StorageInfo.extract(UInt16.self, from: value)
-    }
+  @inline(__always)
+  public var uint16Value: UInt16 {
+    guard kind == .uint16 else { return 0 }
+    return StorageInfo.extract(UInt16.self, from: value)
+  }
 
-    @inline(__always)
-    var uint32Value: UInt32 {
-        guard kind == .uint32 else { return 0 }
-        return StorageInfo.extract(UInt32.self, from: value)
-    }
+  @inline(__always)
+  public var uint32Value: UInt32 {
+    guard kind == .uint32 else { return 0 }
+    return StorageInfo.extract(UInt32.self, from: value)
+  }
 
-    @inline(__always)
-    var uint64Value: UInt64 {
-        guard kind == .uint64 else { return 0 }
-        return StorageInfo.extract(UInt64.self, from: value)
-    }
+  @inline(__always)
+  public var uint64Value: UInt64 {
+    guard kind == .uint64 else { return 0 }
+    return StorageInfo.extract(UInt64.self, from: value)
+  }
 
-    @inline(__always)
-    var doubleValue: Double {
-        guard kind == .double else { return 0.0 }
-        return StorageInfo.extract(Double.self, from: value)
-    }
+  @inline(__always)
+  public var doubleValue: Double {
+    guard kind == .double else { return 0.0 }
+    return StorageInfo.extract(Double.self, from: value)
+  }
 
-    @inline(__always)
-    var floatValue: Float {
-        guard kind == .float else { return 0.0 }
-        return StorageInfo.extract(Float.self, from: value)
-    }
+  @inline(__always)
+  public var floatValue: Float {
+    guard kind == .float else { return 0.0 }
+    return StorageInfo.extract(Float.self, from: value)
+  }
 
-    @inline(__always)
-    var boolValue: Bool {
-        guard kind == .bool else { return false }
-        return StorageInfo.extract(Bool.self, from: value)
-    }
+  @inline(__always)
+  public var boolValue: Bool {
+    guard kind == .bool else { return false }
+    return StorageInfo.extract(Bool.self, from: value)
+  }
 
-    /// Extracts the value as a String.
-    ///
-    /// - Returns: The stored String value, or an empty string if this instance doesn't contain a String
-    @inline(__always)
-    var stringValue: String {
-        guard kind == .string else { return "" }
-        return StorageInfo.extractString(from: value, length: length)
-    }
+  /// Extracts the value as a String.
+  ///
+  /// - Returns: The stored String value, or an empty string if this instance doesn't contain a String
+  @inline(__always)
+  public var stringValue: String {
+    guard kind == .string else { return "" }
+    return StorageInfo.extractString(from: value, length: length)
+  }
 }
 
 /// Protocol for BasicType equality comparison optimized for memory-mapped storage.
@@ -372,65 +373,65 @@ public protocol _BasicTypeEquatable: Equatable {}
 
 /// Protocol for BasicType hash computation supporting double hashing.
 public protocol _BasicTypeHashable {
-    /// Computes two hash values for double hashing collision resolution.
-    ///
-    /// - Returns: A tuple of (hash1, hash2) where hash2 is derived from hash1 and guaranteed to be odd
-    func hashes() -> (Int, Int)
+  /// Computes two hash values for double hashing collision resolution.
+  ///
+  /// - Returns: A tuple of (hash1, hash2) where hash2 is derived from hash1 and guaranteed to be odd
+  func hashes() -> (Int, Int)
 }
 
 // MARK: - Compliance
 
-public extension _BasicType {
-    static func == (lhs: _BasicType, rhs: _BasicType) -> Bool {
-        guard lhs.length == rhs.length, lhs.kind == rhs.kind else {
-            return false
-        }
-        // Optimize: use withUnsafeBytes once instead of per-byte subscript calls
-        return withUnsafeBytes(of: lhs.value) { lhsPtr in
-            withUnsafeBytes(of: rhs.value) { rhsPtr in
-                let length = Int(lhs.length)
-                return memcmp(lhsPtr.baseAddress, rhsPtr.baseAddress, length) == 0
-            }
-        }
+extension _BasicType {
+  public static func == (lhs: _BasicType, rhs: _BasicType) -> Bool {
+    guard lhs.length == rhs.length, lhs.kind == rhs.kind else {
+      return false
     }
+    // Optimize: use withUnsafeBytes once instead of per-byte subscript calls
+    return withUnsafeBytes(of: lhs.value) { lhsPtr in
+      withUnsafeBytes(of: rhs.value) { rhsPtr in
+        let length = Int(lhs.length)
+        return memcmp(lhsPtr.baseAddress, rhsPtr.baseAddress, length) == 0
+      }
+    }
+  }
 }
 
 extension _BasicType {
-    public func hash(into hasher: inout Hasher) {
-        withUnsafeBytes(of: value) { ptr in
-            hasher.combine(bytes: ptr)
-        }
+  public func hash(into hasher: inout Hasher) {
+    withUnsafeBytes(of: value) { ptr in
+      hasher.combine(bytes: ptr)
     }
+  }
 
-    public func hashes() -> (Int, Int) {
-        let hash1 = _hash1()
-        let hash2 = _hash2(from: hash1)
-        return (hash1, hash2)
-    }
+  public func hashes() -> (Int, Int) {
+    let hash1 = _hash1()
+    let hash2 = _hash2(from: hash1)
+    return (hash1, hash2)
+  }
 
-    private func _hash1() -> Int {
-        // FNV-1a hash algorithm (better distribution than djb2)
-        // Optimize: use withUnsafeBytes once instead of per-byte subscript calls
-        withUnsafeBytes(of: value) { ptr in
-            let buffer = ptr.bindMemory(to: UInt8.self)
-            var hash: UInt64 = 14_695_981_039_346_656_037 // FNV offset basis
-            let length = Int(length)
-            for i in 0 ..< length {
-                hash ^= UInt64(buffer[i])
-                hash = hash &* 1_099_511_628_211 // FNV prime
-            }
-            // Ensure non-negative result
-            return Int(hash & UInt64(Int.max))
-        }
+  private func _hash1() -> Int {
+    // FNV-1a hash algorithm (better distribution than djb2)
+    // Optimize: use withUnsafeBytes once instead of per-byte subscript calls
+    withUnsafeBytes(of: value) { ptr in
+      let buffer = ptr.bindMemory(to: UInt8.self)
+      var hash: UInt64 = 14_695_981_039_346_656_037  // FNV offset basis
+      let length = Int(length)
+      for i in 0..<length {
+        hash ^= UInt64(buffer[i])
+        hash = hash &* 1_099_511_628_211  // FNV prime
+      }
+      // Ensure non-negative result
+      return Int(hash & UInt64(Int.max))
     }
+  }
 
-    /// Derive second hash from first hash (much faster than computing separately)
-    /// Use bit mixing to create independent distribution
-    /// Must be odd (coprime with capacity=256) and never zero
-    private func _hash2(from h1: Int) -> Int {
-        // Mix bits: rotate and XOR to decorrelate from hash1
-        let mixed = ((h1 >> 17) ^ (h1 << 15)) &+ (h1 >> 7)
-        // Ensure odd by setting lowest bit
-        return mixed | 1
-    }
+  /// Derive second hash from first hash (much faster than computing separately)
+  /// Use bit mixing to create independent distribution
+  /// Must be odd (coprime with capacity=256) and never zero
+  private func _hash2(from h1: Int) -> Int {
+    // Mix bits: rotate and XOR to decorrelate from hash1
+    let mixed = ((h1 >> 17) ^ (h1 << 15)) &+ (h1 >> 7)
+    // Ensure odd by setting lowest bit
+    return mixed | 1
+  }
 }

@@ -31,8 +31,8 @@ import os
 /// - `NSLock`: Standard Foundation lock
 /// - Custom implementations for specialized needs
 public protocol MemoryMapLock {
-    func lock()
-    func unlock()
+  func lock()
+  func unlock()
 }
 
 /// A no-op lock implementation for single-threaded use cases.
@@ -45,13 +45,13 @@ public protocol MemoryMapLock {
 /// let memoryMap = try MemoryMap<MyData>(fileURL: url, lock: NoLock())
 /// ```
 public class NoLock: MemoryMapLock {
-    public init() {}
+  public init() {}
 
-    @inline(__always)
-    public func lock() {}
+  @inline(__always)
+  public func lock() {}
 
-    @inline(__always)
-    public func unlock() {}
+  @inline(__always)
+  public func unlock() {}
 }
 
 extension NSLock: MemoryMapLock {}

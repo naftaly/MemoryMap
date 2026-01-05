@@ -1,1632 +1,1642 @@
-@testable import MemoryMap
 import XCTest
+
+@testable import MemoryMap
 
 @available(macOS 14.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
 final class KeyValueStoreTests: XCTestCase {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    private let collidingKeys = ["k8", "k134", "k170", "k215"]
+  let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  private let collidingKeys = ["k8", "k134", "k170", "k215"]
 
-    override func tearDown() {
-        try? FileManager.default.removeItem(at: url)
-    }
+  override func tearDown() {
+    try? FileManager.default.removeItem(at: url)
+  }
 
-    // MARK: - Basic Operations
+  // MARK: - Basic Operations
 
-    func testSetAndGet() throws {
-        struct TestValue {
-            var counter: Int
-            var flag: Bool
-        }
+  func testSetAndGet() throws {
+    struct TestValue {
+      var counter: Int
+      var flag: Bool
+    }
+
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key1"] = TestValue(counter: 42, flag: true)
 
-        store["key1"] = TestValue(counter: 42, flag: true)
+    let value = store["key1"]
+    XCTAssertNotNil(value)
+    XCTAssertEqual(value?.counter, 42)
+    XCTAssertEqual(value?.flag, true)
+  }
 
-        let value = store["key1"]
-        XCTAssertNotNil(value)
-        XCTAssertEqual(value?.counter, 42)
-        XCTAssertEqual(value?.flag, true)
+  func testGetNonExistentKey() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testGetNonExistentKey() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let value = store["nonexistent"]
+    XCTAssertNil(value)
+  }
 
-        let value = store["nonexistent"]
-        XCTAssertNil(value)
+  func testUpdate() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testUpdate() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key1"] = TestValue(value: 10)
+    store["key1"] = TestValue(value: 20)
 
-        store["key1"] = TestValue(value: 10)
-        store["key1"] = TestValue(value: 20)
+    let value = store["key1"]
+    XCTAssertEqual(value?.value, 20)
+  }
 
-        let value = store["key1"]
-        XCTAssertEqual(value?.value, 20)
+  func testRemove() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testRemove() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key1"] = TestValue(value: 42)
+    let removed = store["key1"]
+    store["key1"] = nil
+    XCTAssertEqual(removed?.value, 42)
+    XCTAssertNil(store["key1"])
+  }
 
-        store["key1"] = TestValue(value: 42)
-        let removed = store["key1"]
-        store["key1"] = nil
-        XCTAssertEqual(removed?.value, 42)
-        XCTAssertNil(store["key1"])
+  func testRemoveNonExistent() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testRemoveNonExistent() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let removed = store["nonexistent"]
+    store["nonexistent"] = nil
+    XCTAssertNil(removed)
+  }
 
-        let removed = store["nonexistent"]
-        store["nonexistent"] = nil
-        XCTAssertNil(removed)
-    }
+  // MARK: - Deletion with Probe Chains
 
-    // MARK: - Deletion with Probe Chains
+  func testDeletionWithProbeChain() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-    func testDeletionWithProbeChain() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let keys = collidingKeys
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let keys = collidingKeys
-
-        // Insert keys that will create a probe chain (all map to same slot)
-        store[BasicType64(keys[0])] = TestValue(value: 1)
-        store[BasicType64(keys[1])] = TestValue(value: 2)
-        store[BasicType64(keys[2])] = TestValue(value: 3)
-        store[BasicType64(keys[3])] = TestValue(value: 4)
-
-        // Verify all keys are accessible before deletion
-        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 1)
-        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2)
-        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3)
-        XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4)
-
-        // Remove the first key
-        let removed = store[BasicType64(keys[0])]
-        store[BasicType64(keys[0])] = nil
-        XCTAssertEqual(removed?.value, 1)
-        XCTAssertNil(store[BasicType64(keys[0])], "Removed key should not be found")
-
-        // CRITICAL: These lookups should still work!
-        // If deletion just marks as unoccupied without rehashing,
-        // any keys that were in the probe chain after the deleted key
-        // will become unreachable because the probe chain is broken.
-        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2, "key b should still be accessible after deleting a")
-        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3, "key c should still be accessible after deleting a")
-        XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4, "key d should still be accessible after deleting a")
-
-        // Try removing another and verify remaining keys
-        store[BasicType64(keys[2])] = nil
-        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2, "key b should still be accessible after deleting c")
-        XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4, "key d should still be accessible after deleting c")
-    }
-
-    func testDeletionBreaksProbeChainScenario() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Insert keys that will create a probe chain (all map to same slot)
+    store[BasicType64(keys[0])] = TestValue(value: 1)
+    store[BasicType64(keys[1])] = TestValue(value: 2)
+    store[BasicType64(keys[2])] = TestValue(value: 3)
+    store[BasicType64(keys[3])] = TestValue(value: 4)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let keys = Array(collidingKeys.prefix(3))
+    // Verify all keys are accessible before deletion
+    XCTAssertEqual(store[BasicType64(keys[0])]?.value, 1)
+    XCTAssertEqual(store[BasicType64(keys[1])]?.value, 2)
+    XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3)
+    XCTAssertEqual(store[BasicType64(keys[3])]?.value, 4)
 
-        // Fill colliding slots to guarantee a probe chain exists
-        store[BasicType64(keys[0])] = TestValue(value: 10)
-        store[BasicType64(keys[1])] = TestValue(value: 20)
-        store[BasicType64(keys[2])] = TestValue(value: 30)
+    // Remove the first key
+    let removed = store[BasicType64(keys[0])]
+    store[BasicType64(keys[0])] = nil
+    XCTAssertEqual(removed?.value, 1)
+    XCTAssertNil(store[BasicType64(keys[0])], "Removed key should not be found")
 
-        // Verify all are accessible
-        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 10)
-        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 20)
-        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 30)
+    // CRITICAL: These lookups should still work!
+    // If deletion just marks as unoccupied without rehashing,
+    // any keys that were in the probe chain after the deleted key
+    // will become unreachable because the probe chain is broken.
+    XCTAssertEqual(
+      store[BasicType64(keys[1])]?.value, 2, "key b should still be accessible after deleting a")
+    XCTAssertEqual(
+      store[BasicType64(keys[2])]?.value, 3, "key c should still be accessible after deleting a")
+    XCTAssertEqual(
+      store[BasicType64(keys[3])]?.value, 4, "key d should still be accessible after deleting a")
 
-        // Remove middle element (most likely to break chain)
-        store[BasicType64(keys[1])] = nil
+    // Try removing another and verify remaining keys
+    store[BasicType64(keys[2])] = nil
+    XCTAssertEqual(
+      store[BasicType64(keys[1])]?.value, 2, "key b should still be accessible after deleting c")
+    XCTAssertEqual(
+      store[BasicType64(keys[3])]?.value, 4, "key d should still be accessible after deleting c")
+  }
 
-        // CRITICAL: x and z should still be findable
-        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 10, "x should be findable after removing y")
-        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 30, "z should be findable after removing y")
-        XCTAssertNil(store[BasicType64(keys[1])], "y should not be findable after removal")
+  func testDeletionBreaksProbeChainScenario() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testDeletionAndReinsertion() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let keys = Array(collidingKeys.prefix(3))
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let keys = Array(collidingKeys.prefix(3))
+    // Fill colliding slots to guarantee a probe chain exists
+    store[BasicType64(keys[0])] = TestValue(value: 10)
+    store[BasicType64(keys[1])] = TestValue(value: 20)
+    store[BasicType64(keys[2])] = TestValue(value: 30)
 
-        // Create a probe chain scenario
-        store[BasicType64(keys[0])] = TestValue(value: 1)
-        store[BasicType64(keys[1])] = TestValue(value: 2)
-        store[BasicType64(keys[2])] = TestValue(value: 3)
+    // Verify all are accessible
+    XCTAssertEqual(store[BasicType64(keys[0])]?.value, 10)
+    XCTAssertEqual(store[BasicType64(keys[1])]?.value, 20)
+    XCTAssertEqual(store[BasicType64(keys[2])]?.value, 30)
 
-        // Remove middle element
-        store[BasicType64(keys[1])] = nil
+    // Remove middle element (most likely to break chain)
+    store[BasicType64(keys[1])] = nil
 
-        // Reinsert with different value
-        store[BasicType64(keys[1])] = TestValue(value: 20)
+    // CRITICAL: x and z should still be findable
+    XCTAssertEqual(store[BasicType64(keys[0])]?.value, 10, "x should be findable after removing y")
+    XCTAssertEqual(store[BasicType64(keys[2])]?.value, 30, "z should be findable after removing y")
+    XCTAssertNil(store[BasicType64(keys[1])], "y should not be findable after removal")
+  }
 
-        // All should be accessible
-        XCTAssertEqual(store[BasicType64(keys[0])]?.value, 1)
-        XCTAssertEqual(store[BasicType64(keys[1])]?.value, 20)
-        XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3)
+  func testDeletionAndReinsertion() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testContains() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let keys = Array(collidingKeys.prefix(3))
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Create a probe chain scenario
+    store[BasicType64(keys[0])] = TestValue(value: 1)
+    store[BasicType64(keys[1])] = TestValue(value: 2)
+    store[BasicType64(keys[2])] = TestValue(value: 3)
 
-        store["key1"] = TestValue(value: 42)
+    // Remove middle element
+    store[BasicType64(keys[1])] = nil
 
-        XCTAssertTrue(store.contains("key1"))
-        XCTAssertFalse(store.contains("key2"))
+    // Reinsert with different value
+    store[BasicType64(keys[1])] = TestValue(value: 20)
+
+    // All should be accessible
+    XCTAssertEqual(store[BasicType64(keys[0])]?.value, 1)
+    XCTAssertEqual(store[BasicType64(keys[1])]?.value, 20)
+    XCTAssertEqual(store[BasicType64(keys[2])]?.value, 3)
+  }
+
+  func testContains() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Multiple Entries
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testMultipleEntries() throws {
-        struct TestValue {
-            var value: Int
-        }
+    store["key1"] = TestValue(value: 42)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    XCTAssertTrue(store.contains("key1"))
+    XCTAssertFalse(store.contains("key2"))
+  }
 
-        store["key1"] = TestValue(value: 1)
-        store["key2"] = TestValue(value: 2)
-        store["key3"] = TestValue(value: 3)
+  // MARK: - Multiple Entries
 
-        XCTAssertEqual(store["key1"]?.value, 1)
-        XCTAssertEqual(store["key2"]?.value, 2)
-        XCTAssertEqual(store["key3"]?.value, 3)
+  func testMultipleEntries() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testAllKeys() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key1"] = TestValue(value: 1)
+    store["key2"] = TestValue(value: 2)
+    store["key3"] = TestValue(value: 3)
 
-        store["key1"] = TestValue(value: 1)
-        store["key2"] = TestValue(value: 2)
-        store["key3"] = TestValue(value: 3)
+    XCTAssertEqual(store["key1"]?.value, 1)
+    XCTAssertEqual(store["key2"]?.value, 2)
+    XCTAssertEqual(store["key3"]?.value, 3)
+  }
 
-        let keys = store.keys
-        XCTAssertEqual(keys.count, 3)
-        XCTAssertTrue(keys.contains("key1"))
-        XCTAssertTrue(keys.contains("key2"))
-        XCTAssertTrue(keys.contains("key3"))
+  func testAllKeys() throws {
+    struct TestValue {
+      var value: Int
     }
-
-    func testRemoveAll() throws {
-        struct TestValue {
-            var value: Int
-        }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        store["key1"] = TestValue(value: 1)
-        store["key2"] = TestValue(value: 2)
-        store["key3"] = TestValue(value: 3)
+    store["key1"] = TestValue(value: 1)
+    store["key2"] = TestValue(value: 2)
+    store["key3"] = TestValue(value: 3)
 
-        store.removeAll()
+    let keys = store.keys
+    XCTAssertEqual(keys.count, 3)
+    XCTAssertTrue(keys.contains("key1"))
+    XCTAssertTrue(keys.contains("key2"))
+    XCTAssertTrue(keys.contains("key3"))
+  }
 
-        XCTAssertNil(store["key1"])
-        XCTAssertNil(store["key2"])
-        XCTAssertNil(store["key3"])
-        XCTAssertEqual(store.keys.count, 0)
+  func testRemoveAll() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Persistence
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testPersistence() throws {
-        struct TestValue {
-            var counter: Int
-            var timestamp: Double
-        }
+    store["key1"] = TestValue(value: 1)
+    store["key2"] = TestValue(value: 2)
+    store["key3"] = TestValue(value: 3)
 
-        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
+    store.removeAll()
 
-        store?["user:123"] = TestValue(counter: 100, timestamp: 12345.67)
-        store?["user:456"] = TestValue(counter: 200, timestamp: 67890.12)
+    XCTAssertNil(store["key1"])
+    XCTAssertNil(store["key2"])
+    XCTAssertNil(store["key3"])
+    XCTAssertEqual(store.keys.count, 0)
+  }
 
-        // Close the store
-        store = nil
+  // MARK: - Persistence
 
-        // Reopen and verify
-        store = try KeyValueStore(fileURL: url)
+  func testPersistence() throws {
+    struct TestValue {
+      var counter: Int
+      var timestamp: Double
+    }
 
-        let value1 = store?["user:123"]
-        XCTAssertEqual(value1?.counter, 100)
-        XCTAssertEqual(value1?.timestamp, 12345.67)
+    var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
-        let value2 = store?["user:456"]
-        XCTAssertEqual(value2?.counter, 200)
-        XCTAssertEqual(value2?.timestamp, 67890.12)
-    }
+    store?["user:123"] = TestValue(counter: 100, timestamp: 12345.67)
+    store?["user:456"] = TestValue(counter: 200, timestamp: 67890.12)
 
-    // MARK: - Key Length
+    // Close the store
+    store = nil
 
-    func testKeyTooLong() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Reopen and verify
+    store = try KeyValueStore(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let value1 = store?["user:123"]
+    XCTAssertEqual(value1?.counter, 100)
+    XCTAssertEqual(value1?.timestamp, 12345.67)
 
-        // Keys longer than 64 bytes are truncated in release builds
-        // (assertion in debug builds)
-        // This test verifies the API handles keys gracefully
+    let value2 = store?["user:456"]
+    XCTAssertEqual(value2?.counter, 200)
+    XCTAssertEqual(value2?.timestamp, 67890.12)
+  }
 
-        // Use a key that's exactly at the limit (64 bytes)
-        let maxKey = String(repeating: "a", count: 64)
-        store[BasicType64(maxKey)] = TestValue(value: 42)
-        XCTAssertEqual(store[BasicType64(maxKey)]?.value, 42)
+  // MARK: - Key Length
 
-        // Clean up
-        store[BasicType64(maxKey)] = nil
-        XCTAssertNil(store[BasicType64(maxKey)])
+  func testKeyTooLong() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testMaxKeyLength() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Keys longer than 64 bytes are truncated in release builds
+    // (assertion in debug builds)
+    // This test verifies the API handles keys gracefully
 
-        // Create a key exactly 64 bytes
-        let maxKey = String(repeating: "a", count: 64)
+    // Use a key that's exactly at the limit (64 bytes)
+    let maxKey = String(repeating: "a", count: 64)
+    store[BasicType64(maxKey)] = TestValue(value: 42)
+    XCTAssertEqual(store[BasicType64(maxKey)]?.value, 42)
 
-        store[BasicType64(maxKey)] = TestValue(value: 42)
-        XCTAssertEqual(store[BasicType64(maxKey)]?.value, 42)
+    // Clean up
+    store[BasicType64(maxKey)] = nil
+    XCTAssertNil(store[BasicType64(maxKey)])
+  }
+
+  func testMaxKeyLength() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Hash Collisions
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testHashCollisionHandling() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Create a key exactly 64 bytes
+    let maxKey = String(repeating: "a", count: 64)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store[BasicType64(maxKey)] = TestValue(value: 42)
+    XCTAssertEqual(store[BasicType64(maxKey)]?.value, 42)
+  }
 
-        // Add many entries to increase likelihood of hash collisions
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+  // MARK: - Hash Collisions
 
-        // Verify all entries are retrievable
-        for i in 0 ..< 100 {
-            let value = store[BasicType64("key\(i)")]
-            XCTAssertEqual(value?.value, i, "Failed to retrieve key\(i)")
-        }
+  func testHashCollisionHandling() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Store Full
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testStoreFull() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Add many entries to increase likelihood of hash collisions
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let capacity = KeyValueStoreDefaultCapacity
+    // Verify all entries are retrievable
+    for i in 0..<100 {
+      let value = store[BasicType64("key\(i)")]
+      XCTAssertEqual(value?.value, i, "Failed to retrieve key\(i)")
+    }
+  }
 
-        // Fill the store
-        for i in 0 ..< capacity {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+  // MARK: - Store Full
 
-        // Subscript silently ignores when full
-        let overflowKey = "overflow"
-        store[BasicType64(overflowKey)] = TestValue(value: 999)
-        XCTAssertNil(store[BasicType64(overflowKey)], "Store should be full and unable to add new keys")
+  func testStoreFull() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Special Characters in Keys
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let capacity = KeyValueStoreDefaultCapacity
 
-    func testSpecialCharactersInKeys() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Fill the store
+    for i in 0..<capacity {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-
-        let specialKeys = [
-            "key:with:colons",
-            "key/with/slashes",
-            "key.with.dots",
-            "key-with-dashes",
-            "key_with_underscores",
-            "key with spaces",
-            "key🎉with🌟emoji",
-        ]
-
-        for (index, key) in specialKeys.enumerated() {
-            store[BasicType64(key)] = TestValue(value: index)
-        }
+    // Subscript silently ignores when full
+    let overflowKey = "overflow"
+    store[BasicType64(overflowKey)] = TestValue(value: 999)
+    XCTAssertNil(store[BasicType64(overflowKey)], "Store should be full and unable to add new keys")
+  }
 
-        for (index, key) in specialKeys.enumerated() {
-            let value = store[BasicType64(key)]
-            XCTAssertEqual(value?.value, index, "Failed for key: \(key)")
-        }
+  // MARK: - Special Characters in Keys
+
+  func testSpecialCharactersInKeys() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Different Value Types
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testIntValue() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let specialKeys = [
+      "key:with:colons",
+      "key/with/slashes",
+      "key.with.dots",
+      "key-with-dashes",
+      "key_with_underscores",
+      "key with spaces",
+      "key🎉with🌟emoji",
+    ]
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        store["key"] = TestValue(value: Int.max)
-        XCTAssertEqual(store["key"]?.value, Int.max)
+    for (index, key) in specialKeys.enumerated() {
+      store[BasicType64(key)] = TestValue(value: index)
     }
 
-    func testDoubleValue() throws {
-        struct TestValue {
-            var value: Double
-        }
+    for (index, key) in specialKeys.enumerated() {
+      let value = store[BasicType64(key)]
+      XCTAssertEqual(value?.value, index, "Failed for key: \(key)")
+    }
+  }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        store["key"] = TestValue(value: 3.14159)
-
-        let retrieved = store["key"]
-        XCTAssertNotNil(retrieved)
-        XCTAssertEqual(retrieved!.value, 3.14159, accuracy: 0.00001)
-    }
-
-    func testComplexStruct() throws {
-        struct ComplexValue {
-            var int8: Int8
-            var int16: Int16
-            var int32: Int32
-            var int64: Int64
-            var uint8: UInt8
-            var uint16: UInt16
-            var uint32: UInt32
-            var uint64: UInt64
-            var float: Float
-            var double: Double
-            var bool1: Bool
-            var bool2: Bool
-        }
+  // MARK: - Different Value Types
 
-        let store = try KeyValueStore<BasicType64, ComplexValue>(fileURL: url)
-
-        let complex = ComplexValue(
-            int8: -128,
-            int16: -32768,
-            int32: -2_147_483_648,
-            int64: -9_223_372_036_854_775_808,
-            uint8: 255,
-            uint16: 65535,
-            uint32: 4_294_967_295,
-            uint64: 18_446_744_073_709_551_615,
-            float: 3.14,
-            double: 2.71828,
-            bool1: true,
-            bool2: false
-        )
-
-        store["complex"] = complex
-
-        let retrieved = store["complex"]
-        XCTAssertNotNil(retrieved)
-        XCTAssertEqual(retrieved?.int8, -128)
-        XCTAssertEqual(retrieved?.int16, -32768)
-        XCTAssertEqual(retrieved?.int32, -2_147_483_648)
-        XCTAssertEqual(retrieved?.int64, -9_223_372_036_854_775_808)
-        XCTAssertEqual(retrieved?.uint8, 255)
-        XCTAssertEqual(retrieved?.uint16, 65535)
-        XCTAssertEqual(retrieved?.uint32, 4_294_967_295)
-        XCTAssertEqual(retrieved?.uint64, 18_446_744_073_709_551_615)
-        XCTAssertEqual(Double(retrieved!.float), 3.14, accuracy: 0.001)
-        XCTAssertEqual(retrieved!.double, 2.71828, accuracy: 0.00001)
-        XCTAssertEqual(retrieved?.bool1, true)
-        XCTAssertEqual(retrieved?.bool2, false)
-    }
-
-    // MARK: - Edge Cases
-
-    func testEmptyKey() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testIntValue() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key"] = TestValue(value: Int.max)
+    XCTAssertEqual(store["key"]?.value, Int.max)
+  }
 
-        store[""] = TestValue(value: 42)
-        XCTAssertEqual(store[""]?.value, 42)
+  func testDoubleValue() throws {
+    struct TestValue {
+      var value: Double
     }
-
-    func testSingleCharacterKey() throws {
-        struct TestValue {
-            var value: Int
-        }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key"] = TestValue(value: 3.14159)
 
-        store["a"] = TestValue(value: 1)
-        store["b"] = TestValue(value: 2)
+    let retrieved = store["key"]
+    XCTAssertNotNil(retrieved)
+    XCTAssertEqual(retrieved!.value, 3.14159, accuracy: 0.00001)
+  }
 
-        XCTAssertEqual(store["a"]?.value, 1)
-        XCTAssertEqual(store["b"]?.value, 2)
+  func testComplexStruct() throws {
+    struct ComplexValue {
+      var int8: Int8
+      var int16: Int16
+      var int32: Int32
+      var int64: Int64
+      var uint8: UInt8
+      var uint16: UInt16
+      var uint32: UInt32
+      var uint64: UInt64
+      var float: Float
+      var double: Double
+      var bool1: Bool
+      var bool2: Bool
     }
 
-    // MARK: - Dictionary-like API
+    let store = try KeyValueStore<BasicType64, ComplexValue>(fileURL: url)
 
-    func testSubscriptAccess() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let complex = ComplexValue(
+      int8: -128,
+      int16: -32768,
+      int32: -2_147_483_648,
+      int64: -9_223_372_036_854_775_808,
+      uint8: 255,
+      uint16: 65535,
+      uint32: 4_294_967_295,
+      uint64: 18_446_744_073_709_551_615,
+      float: 3.14,
+      double: 2.71828,
+      bool1: true,
+      bool2: false
+    )
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["complex"] = complex
 
-        // Test setting and getting
-        store["key"] = TestValue(value: 42)
-        XCTAssertEqual(store["key"]?.value, 42)
+    let retrieved = store["complex"]
+    XCTAssertNotNil(retrieved)
+    XCTAssertEqual(retrieved?.int8, -128)
+    XCTAssertEqual(retrieved?.int16, -32768)
+    XCTAssertEqual(retrieved?.int32, -2_147_483_648)
+    XCTAssertEqual(retrieved?.int64, -9_223_372_036_854_775_808)
+    XCTAssertEqual(retrieved?.uint8, 255)
+    XCTAssertEqual(retrieved?.uint16, 65535)
+    XCTAssertEqual(retrieved?.uint32, 4_294_967_295)
+    XCTAssertEqual(retrieved?.uint64, 18_446_744_073_709_551_615)
+    XCTAssertEqual(Double(retrieved!.float), 3.14, accuracy: 0.001)
+    XCTAssertEqual(retrieved!.double, 2.71828, accuracy: 0.00001)
+    XCTAssertEqual(retrieved?.bool1, true)
+    XCTAssertEqual(retrieved?.bool2, false)
+  }
 
-        // Test updating
-        store["key"] = TestValue(value: 100)
-        XCTAssertEqual(store["key"]?.value, 100)
+  // MARK: - Edge Cases
 
-        // Test removing by setting to nil
-        store["key"] = nil
-        XCTAssertNil(store["key"])
+  func testEmptyKey() throws {
+    struct TestValue {
+      var value: Int
     }
-
-    func testSubscriptWithDefault() throws {
-        struct TestValue {
-            var value: Int
-        }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Non-existent key returns default
-        let value1 = store["missing", default: TestValue(value: 99)]
-        XCTAssertEqual(value1.value, 99)
+    store[""] = TestValue(value: 42)
+    XCTAssertEqual(store[""]?.value, 42)
+  }
 
-        // Existing key returns stored value
-        store["key"] = TestValue(value: 42)
-        let value2 = store["key", default: TestValue(value: 99)]
-        XCTAssertEqual(value2.value, 42)
+  func testSingleCharacterKey() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testUpdateValue() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+
+    store["a"] = TestValue(value: 1)
+    store["b"] = TestValue(value: 2)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    XCTAssertEqual(store["a"]?.value, 1)
+    XCTAssertEqual(store["b"]?.value, 2)
+  }
 
-        // Set initial value
-        store["key"] = TestValue(value: 42)
-        XCTAssertEqual(store["key"]?.value, 42)
+  // MARK: - Dictionary-like API
 
-        // Update existing key
-        let oldValue = store["key"]
-        store["key"] = TestValue(value: 100)
-        XCTAssertEqual(oldValue?.value, 42)
-        XCTAssertEqual(store["key"]?.value, 100)
+  func testSubscriptAccess() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testToDictionary() throws {
-        struct TestValue: Equatable {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Test setting and getting
+    store["key"] = TestValue(value: 42)
+    XCTAssertEqual(store["key"]?.value, 42)
 
-        store["key1"] = TestValue(value: 1)
-        store["key2"] = TestValue(value: 2)
-        store["key3"] = TestValue(value: 3)
+    // Test updating
+    store["key"] = TestValue(value: 100)
+    XCTAssertEqual(store["key"]?.value, 100)
 
-        let dict = store.dictionaryRepresentation()
-        XCTAssertEqual(dict.count, 3)
-        XCTAssertEqual(dict["key1"], TestValue(value: 1))
-        XCTAssertEqual(dict["key2"], TestValue(value: 2))
-        XCTAssertEqual(dict["key3"], TestValue(value: 3))
+    // Test removing by setting to nil
+    store["key"] = nil
+    XCTAssertNil(store["key"])
+  }
 
-        // Test that it's a copy - modifications don't affect each other
-        store["key4"] = TestValue(value: 4)
-        XCTAssertEqual(dict.count, 3)
-        XCTAssertNil(dict["key4"])
+  func testSubscriptWithDefault() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Benchmarks
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testPerformanceInsert() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Non-existent key returns default
+    let value1 = store["missing", default: TestValue(value: 99)]
+    XCTAssertEqual(value1.value, 99)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Existing key returns stored value
+    store["key"] = TestValue(value: 42)
+    let value2 = store["key", default: TestValue(value: 99)]
+    XCTAssertEqual(value2.value, 42)
+  }
 
-        measure {
-            for i in 0 ..< 100 {
-                store[BasicType64("key\(i)")] = TestValue(value: i)
-            }
-        }
+  func testUpdateValue() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testPerformanceLookupHit() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Set initial value
+    store["key"] = TestValue(value: 42)
+    XCTAssertEqual(store["key"]?.value, 42)
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    // Update existing key
+    let oldValue = store["key"]
+    store["key"] = TestValue(value: 100)
+    XCTAssertEqual(oldValue?.value, 42)
+    XCTAssertEqual(store["key"]?.value, 100)
+  }
 
-        measure {
-            for i in 0 ..< 100 {
-                _ = store[BasicType64("key\(i)")]
-            }
-        }
+  func testToDictionary() throws {
+    struct TestValue: Equatable {
+      var value: Int
     }
 
-    func testPerformanceLookupMiss() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    store["key1"] = TestValue(value: 1)
+    store["key2"] = TestValue(value: 2)
+    store["key3"] = TestValue(value: 3)
 
-        // Prepopulate with different keys
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    let dict = store.dictionaryRepresentation()
+    XCTAssertEqual(dict.count, 3)
+    XCTAssertEqual(dict["key1"], TestValue(value: 1))
+    XCTAssertEqual(dict["key2"], TestValue(value: 2))
+    XCTAssertEqual(dict["key3"], TestValue(value: 3))
 
-        measure {
-            for i in 0 ..< 100 {
-                _ = store[BasicType64("missing\(i)")]
-            }
-        }
-    }
+    // Test that it's a copy - modifications don't affect each other
+    store["key4"] = TestValue(value: 4)
+    XCTAssertEqual(dict.count, 3)
+    XCTAssertNil(dict["key4"])
+  }
 
-    func testPerformanceUpdate() throws {
-        struct TestValue {
-            var value: Int
-        }
+  // MARK: - Benchmarks
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testPerformanceInsert() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        measure {
-            for i in 0 ..< 100 {
-                store[BasicType64("key\(i)")] = TestValue(value: i * 2)
-            }
-        }
+    measure {
+      for i in 0..<100 {
+        store[BasicType64("key\(i)")] = TestValue(value: i)
+      }
     }
+  }
 
-    func testPerformanceRemove() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testPerformanceLookupHit() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-
-        measure {
-            // Prepopulate
-            for i in 0 ..< 100 {
-                store[BasicType64("key\(i)")] = TestValue(value: i)
-            }
-
-            // Remove all
-            for i in 0 ..< 100 {
-                store[BasicType64("key\(i)")] = nil
-            }
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
     }
 
-    func testPerformanceCount() throws {
-        struct TestValue {
-            var value: Int
-        }
+    measure {
+      for i in 0..<100 {
+        _ = store[BasicType64("key\(i)")]
+      }
+    }
+  }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testPerformanceLookupMiss() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        measure {
-            for _ in 0 ..< 100 {
-                _ = store.keys.count
-            }
-        }
+    // Prepopulate with different keys
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
     }
 
-    func testPerformanceKeys() throws {
-        struct TestValue {
-            var value: Int
-        }
+    measure {
+      for i in 0..<100 {
+        _ = store[BasicType64("missing\(i)")]
+      }
+    }
+  }
+
+  func testPerformanceUpdate() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        measure {
-            _ = store.keys
-        }
+    measure {
+      for i in 0..<100 {
+        store[BasicType64("key\(i)")] = TestValue(value: i * 2)
+      }
     }
+  }
 
-    func testPerformanceToDictionary() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testPerformanceRemove() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    measure {
+      // Prepopulate
+      for i in 0..<100 {
+        store[BasicType64("key\(i)")] = TestValue(value: i)
+      }
 
-        measure {
-            _ = store.dictionaryRepresentation()
-        }
+      // Remove all
+      for i in 0..<100 {
+        store[BasicType64("key\(i)")] = nil
+      }
     }
+  }
 
-    func testPerformanceMixedOperations() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testPerformanceCount() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        measure {
-            // Mix of operations that simulate real-world usage
-            for i in 0 ..< 50 {
-                store[BasicType64("key\(i)")] = TestValue(value: i)
-            }
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-            for i in 0 ..< 50 {
-                _ = store[BasicType64("key\(i)")]
-            }
+    measure {
+      for _ in 0..<100 {
+        _ = store.keys.count
+      }
+    }
+  }
 
-            for i in 0 ..< 25 {
-                store[BasicType64("key\(i)")] = TestValue(value: i * 2)
-            }
+  func testPerformanceKeys() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-            for i in 0 ..< 10 {
-                store[BasicType64("key\(i)")] = nil
-            }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-            _ = store.keys
-        }
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
     }
 
-    // MARK: - Concurrency Tests
+    measure {
+      _ = store.keys
+    }
+  }
 
-    func testConcurrentReads() throws {
-        struct TestValue: Sendable {
-            var value: Int
-        }
+  func testPerformanceToDictionary() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        let iterations = 1000
-        let expectation = XCTestExpectation(description: "Concurrent reads")
-        expectation.expectedFulfillmentCount = 4
-
-        for _ in 0 ..< 4 {
-            DispatchQueue.global().async {
-                for _ in 0 ..< iterations {
-                    let index = Int.random(in: 0 ..< 100)
-                    let value = store[BasicType64("key\(index)")]
-                    XCTAssertEqual(value?.value, index)
-                }
-                expectation.fulfill()
-            }
-        }
+    measure {
+      _ = store.dictionaryRepresentation()
+    }
+  }
 
-        wait(for: [expectation], timeout: 10.0)
+  func testPerformanceMixedOperations() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testConcurrentWrites() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-
-        let iterations = 30 // 4 threads * 30 items = 120 total (within 128 capacity)
-        let expectation = XCTestExpectation(description: "Concurrent writes")
-        expectation.expectedFulfillmentCount = 4
-
-        for threadId in 0 ..< 4 {
-            DispatchQueue.global().async {
-                for i in 0 ..< iterations {
-                    let key = "thread\(threadId)_key\(i)"
-                    store[BasicType64(key)] = TestValue(value: i)
-                }
-                expectation.fulfill()
-            }
-        }
+    measure {
+      // Mix of operations that simulate real-world usage
+      for i in 0..<50 {
+        store[BasicType64("key\(i)")] = TestValue(value: i)
+      }
 
-        wait(for: [expectation], timeout: 10.0)
-
-        // Verify all writes succeeded
-        for threadId in 0 ..< 4 {
-            for i in 0 ..< iterations {
-                let key = "thread\(threadId)_key\(i)"
-                XCTAssertEqual(store[BasicType64(key)]?.value, i, "Failed for \(key)")
-            }
-        }
+      for i in 0..<50 {
+        _ = store[BasicType64("key\(i)")]
+      }
+
+      for i in 0..<25 {
+        store[BasicType64("key\(i)")] = TestValue(value: i * 2)
+      }
+
+      for i in 0..<10 {
+        store[BasicType64("key\(i)")] = nil
+      }
+
+      _ = store.keys
     }
+  }
 
-    func testConcurrentMixedOperations() throws {
-        struct TestValue {
-            var value: Int
-        }
+  // MARK: - Concurrency Tests
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testConcurrentReads() throws {
+    struct TestValue: Sendable {
+      var value: Int
+    }
 
-        // Prepopulate some data
-        for i in 0 ..< 30 {
-            store[BasicType64("shared\(i)")] = TestValue(value: i)
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let expectation = XCTestExpectation(description: "Concurrent mixed operations")
-        expectation.expectedFulfillmentCount = 6
-
-        // Reader threads
-        for _ in 0 ..< 3 {
-            DispatchQueue.global().async {
-                for _ in 0 ..< 200 {
-                    let index = Int.random(in: 0 ..< 30)
-                    _ = store[BasicType64("shared\(index)")]
-                }
-                expectation.fulfill()
-            }
-        }
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
+
+    let iterations = 1000
+    let expectation = XCTestExpectation(description: "Concurrent reads")
+    expectation.expectedFulfillmentCount = 4
 
-        // Writer threads (add 20 items each = 60 total + 30 shared = 90, well under 128 limit)
-        for threadId in 0 ..< 3 {
-            DispatchQueue.global().async {
-                for i in 0 ..< 20 {
-                    let key = "writer\(threadId)_\(i)"
-                    store[BasicType64(key)] = TestValue(value: i * threadId)
-                }
-                expectation.fulfill()
-            }
+    for _ in 0..<4 {
+      DispatchQueue.global().async {
+        for _ in 0..<iterations {
+          let index = Int.random(in: 0..<100)
+          let value = store[BasicType64("key\(index)")]
+          XCTAssertEqual(value?.value, index)
         }
+        expectation.fulfill()
+      }
+    }
+
+    wait(for: [expectation], timeout: 10.0)
+  }
 
-        wait(for: [expectation], timeout: 10.0)
+  func testConcurrentWrites() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Key Type Tests
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testKeyTypeDirectUsage() throws {
-        struct TestValue {
-            var value: Int
+    let iterations = 30  // 4 threads * 30 items = 120 total (within 128 capacity)
+    let expectation = XCTestExpectation(description: "Concurrent writes")
+    expectation.expectedFulfillmentCount = 4
+
+    for threadId in 0..<4 {
+      DispatchQueue.global().async {
+        for i in 0..<iterations {
+          let key = "thread\(threadId)_key\(i)"
+          store[BasicType64(key)] = TestValue(value: i)
         }
+        expectation.fulfill()
+      }
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    wait(for: [expectation], timeout: 10.0)
 
-        let key = BasicType64("mykey")
-        store[key] = TestValue(value: 42)
+    // Verify all writes succeeded
+    for threadId in 0..<4 {
+      for i in 0..<iterations {
+        let key = "thread\(threadId)_key\(i)"
+        XCTAssertEqual(store[BasicType64(key)]?.value, i, "Failed for \(key)")
+      }
+    }
+  }
 
-        XCTAssertEqual(store[key]?.value, 42)
+  func testConcurrentMixedOperations() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testKeyTypeStringLiteral() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Prepopulate some data
+    for i in 0..<30 {
+      store[BasicType64("shared\(i)")] = TestValue(value: i)
+    }
 
-        let key: BasicType64 = "literal_key"
-        store[key] = TestValue(value: 99)
+    let expectation = XCTestExpectation(description: "Concurrent mixed operations")
+    expectation.expectedFulfillmentCount = 6
 
-        XCTAssertEqual(store[key]?.value, 99)
+    // Reader threads
+    for _ in 0..<3 {
+      DispatchQueue.global().async {
+        for _ in 0..<200 {
+          let index = Int.random(in: 0..<30)
+          _ = store[BasicType64("shared\(index)")]
+        }
+        expectation.fulfill()
+      }
     }
 
-    func testKeyTypeWithDefault() throws {
-        struct TestValue {
-            var value: Int
+    // Writer threads (add 20 items each = 60 total + 30 shared = 90, well under 128 limit)
+    for threadId in 0..<3 {
+      DispatchQueue.global().async {
+        for i in 0..<20 {
+          let key = "writer\(threadId)_\(i)"
+          store[BasicType64(key)] = TestValue(value: i * threadId)
         }
+        expectation.fulfill()
+      }
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    wait(for: [expectation], timeout: 10.0)
+  }
 
-        let key: BasicType64 = "test"
-        let value = store[key, default: TestValue(value: 100)]
-        XCTAssertEqual(value.value, 100)
+  // MARK: - Key Type Tests
 
-        store[key] = TestValue(value: 50)
-        let value2 = store[key, default: TestValue(value: 100)]
-        XCTAssertEqual(value2.value, 50)
+  func testKeyTypeDirectUsage() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - UTF-8 Boundary Tests
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testUTF8MultiByteCharacters() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let key = BasicType64("mykey")
+    store[key] = TestValue(value: 42)
+
+    XCTAssertEqual(store[key]?.value, 42)
+  }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testKeyTypeStringLiteral() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let keys = [
-            "🎉🌟💯🚀", // Emoji (4 bytes each)
-            "你好世界测试", // Chinese characters (3 bytes each)
-            "こんにちは", // Japanese hiragana
-            "🇺🇸🇯🇵🇨🇳", // Flag emojis (8 bytes each)
-        ]
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        for (index, key) in keys.enumerated() {
-            store[BasicType64(key)] = TestValue(value: index)
-        }
+    let key: BasicType64 = "literal_key"
+    store[key] = TestValue(value: 99)
 
-        for (index, key) in keys.enumerated() {
-            XCTAssertEqual(store[BasicType64(key)]?.value, index, "Failed for key: \(key)")
-        }
+    XCTAssertEqual(store[key]?.value, 99)
+  }
+
+  func testKeyTypeWithDefault() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testUTF8BoundaryTruncation() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let key: BasicType64 = "test"
+    let value = store[key, default: TestValue(value: 100)]
+    XCTAssertEqual(value.value, 100)
 
-        // Create a key with emoji that will be truncated at 64 bytes
-        // Each emoji is 4 bytes, so 16 emoji = 64 bytes exactly
-        let exactKey = String(repeating: "🎉", count: 16) // Exactly 64 bytes
-        store[BasicType64(exactKey)] = TestValue(value: 1)
-        XCTAssertEqual(store[BasicType64(exactKey)]?.value, 1)
+    store[key] = TestValue(value: 50)
+    let value2 = store[key, default: TestValue(value: 100)]
+    XCTAssertEqual(value2.value, 50)
+  }
 
-        // 17 emoji = 68 bytes, should truncate to 16 emoji
-        let overKey = String(repeating: "🎉", count: 17)
-        store[BasicType64(overKey)] = TestValue(value: 2)
+  // MARK: - UTF-8 Boundary Tests
 
-        // The truncated version should match the 16-emoji key
-        XCTAssertEqual(store[BasicType64(exactKey)]?.value, 2, "Truncation should respect UTF-8 boundaries")
+  func testUTF8MultiByteCharacters() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testUTF8MixedASCIIAndMultibyte() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let keys = [
+      "🎉🌟💯🚀",  // Emoji (4 bytes each)
+      "你好世界测试",  // Chinese characters (3 bytes each)
+      "こんにちは",  // Japanese hiragana
+      "🇺🇸🇯🇵🇨🇳",  // Flag emojis (8 bytes each)
+    ]
 
-        let keys = [
-            "user:123:🎉",
-            "session/abc/🌟/data",
-            "cache:你好:item",
-        ]
+    for (index, key) in keys.enumerated() {
+      store[BasicType64(key)] = TestValue(value: index)
+    }
 
-        for (index, key) in keys.enumerated() {
-            store[BasicType64(key)] = TestValue(value: index)
-        }
+    for (index, key) in keys.enumerated() {
+      XCTAssertEqual(store[BasicType64(key)]?.value, index, "Failed for key: \(key)")
+    }
+  }
 
-        for (index, key) in keys.enumerated() {
-            XCTAssertEqual(store[BasicType64(key)]?.value, index)
-        }
+  func testUTF8BoundaryTruncation() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Persistence Edge Cases
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testRemoveAllPersistence() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Create a key with emoji that will be truncated at 64 bytes
+    // Each emoji is 4 bytes, so 16 emoji = 64 bytes exactly
+    let exactKey = String(repeating: "🎉", count: 16)  // Exactly 64 bytes
+    store[BasicType64(exactKey)] = TestValue(value: 1)
+    XCTAssertEqual(store[BasicType64(exactKey)]?.value, 1)
+
+    // 17 emoji = 68 bytes, should truncate to 16 emoji
+    let overKey = String(repeating: "🎉", count: 17)
+    store[BasicType64(overKey)] = TestValue(value: 2)
+
+    // The truncated version should match the 16-emoji key
+    XCTAssertEqual(
+      store[BasicType64(exactKey)]?.value, 2, "Truncation should respect UTF-8 boundaries")
+  }
 
-        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
+  func testUTF8MixedASCIIAndMultibyte() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Add some data
-        store?["key1"] = TestValue(value: 1)
-        store?["key2"] = TestValue(value: 2)
-        store?["key3"] = TestValue(value: 3)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Remove all
-        store?.removeAll()
-        XCTAssertEqual(store?.count, 0)
+    let keys = [
+      "user:123:🎉",
+      "session/abc/🌟/data",
+      "cache:你好:item",
+    ]
 
-        // Close and reopen
-        store = nil
-        store = try KeyValueStore(fileURL: url)
+    for (index, key) in keys.enumerated() {
+      store[BasicType64(key)] = TestValue(value: index)
+    }
 
-        // Should still be empty
-        XCTAssertNil(store?["key1"])
-        XCTAssertNil(store?["key2"])
-        XCTAssertNil(store?["key3"])
+    for (index, key) in keys.enumerated() {
+      XCTAssertEqual(store[BasicType64(key)]?.value, index)
     }
+  }
 
-    func testDeletionPersistence() throws {
-        struct TestValue {
-            var value: Int
-        }
+  // MARK: - Persistence Edge Cases
 
-        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
+  func testRemoveAllPersistence() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Add data with colliding keys to create tombstones
-        let keys = Array(collidingKeys.prefix(4))
-        for (index, key) in keys.enumerated() {
-            store?[BasicType64(key)] = TestValue(value: index)
-        }
+    var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
-        // Delete some
-        store?[BasicType64(keys[1])] = nil
-        store?[BasicType64(keys[3])] = nil
+    // Add some data
+    store?["key1"] = TestValue(value: 1)
+    store?["key2"] = TestValue(value: 2)
+    store?["key3"] = TestValue(value: 3)
 
-        // Close and reopen
-        store = nil
-        store = try KeyValueStore(fileURL: url)
+    // Remove all
+    store?.removeAll()
+    XCTAssertEqual(store?.count, 0)
 
-        // Verify persistence
-        XCTAssertEqual(store?[BasicType64(keys[0])]?.value, 0)
-        XCTAssertNil(store?[BasicType64(keys[1])])
-        XCTAssertEqual(store?[BasicType64(keys[2])]?.value, 2)
-        XCTAssertNil(store?[BasicType64(keys[3])])
+    // Close and reopen
+    store = nil
+    store = try KeyValueStore(fileURL: url)
+
+    // Should still be empty
+    XCTAssertNil(store?["key1"])
+    XCTAssertNil(store?["key2"])
+    XCTAssertNil(store?["key3"])
+  }
+
+  func testDeletionPersistence() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testMultipleReopenCycles() throws {
-        struct TestValue {
-            var value: Int
-        }
+    var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
-        for cycle in 0 ..< 5 {
-            let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-
-            if cycle == 0 {
-                // First cycle: add data
-                store["persistent"] = TestValue(value: 42)
-            } else {
-                // Subsequent cycles: verify data persists
-                XCTAssertEqual(store["persistent"]?.value, 42, "Failed on cycle \(cycle)")
-            }
-        }
+    // Add data with colliding keys to create tombstones
+    let keys = Array(collidingKeys.prefix(4))
+    for (index, key) in keys.enumerated() {
+      store?[BasicType64(key)] = TestValue(value: index)
     }
 
-    // MARK: - Hash Distribution Tests
+    // Delete some
+    store?[BasicType64(keys[1])] = nil
+    store?[BasicType64(keys[3])] = nil
 
-    func testHashDistribution() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Close and reopen
+    store = nil
+    store = try KeyValueStore(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Verify persistence
+    XCTAssertEqual(store?[BasicType64(keys[0])]?.value, 0)
+    XCTAssertNil(store?[BasicType64(keys[1])])
+    XCTAssertEqual(store?[BasicType64(keys[2])]?.value, 2)
+    XCTAssertNil(store?[BasicType64(keys[3])])
+  }
 
-        // Insert many keys and verify distribution
-        for i in 0 ..< 100 {
-            let key = "key\(i)"
-            store[BasicType64(key)] = TestValue(value: i)
+  func testMultipleReopenCycles() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-            // We can't directly access the slot, but we can infer distribution
-            // by checking how many collisions occur
-        }
+    for cycle in 0..<5 {
+      let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // All keys should be retrievable (this tests distribution indirectly)
-        for i in 0 ..< 100 {
-            XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
-        }
+      if cycle == 0 {
+        // First cycle: add data
+        store["persistent"] = TestValue(value: 42)
+      } else {
+        // Subsequent cycles: verify data persists
+        XCTAssertEqual(store["persistent"]?.value, 42, "Failed on cycle \(cycle)")
+      }
     }
+  }
 
-    func testHashConsistency() throws {
-        struct TestValue {
-            var value: Int
-        }
+  // MARK: - Hash Distribution Tests
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testHashDistribution() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let testKey = "consistency_test"
-        store[BasicType64(testKey)] = TestValue(value: 123)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Retrieve multiple times - should always work
-        for _ in 0 ..< 100 {
-            XCTAssertEqual(store[BasicType64(testKey)]?.value, 123)
-        }
+    // Insert many keys and verify distribution
+    for i in 0..<100 {
+      let key = "key\(i)"
+      store[BasicType64(key)] = TestValue(value: i)
 
-        // Reopen and verify
-        let store2 = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        XCTAssertEqual(store2[BasicType64(testKey)]?.value, 123)
+      // We can't directly access the slot, but we can infer distribution
+      // by checking how many collisions occur
     }
 
-    // MARK: - Load Factor Performance
+    // All keys should be retrievable (this tests distribution indirectly)
+    for i in 0..<100 {
+      XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
+    }
+  }
 
-    func testPerformanceLoadFactor25Percent() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testHashConsistency() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let itemCount = 64 // 25% of 256
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Prepopulate
-        for i in 0 ..< itemCount {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    let testKey = "consistency_test"
+    store[BasicType64(testKey)] = TestValue(value: 123)
 
-        measure {
-            for _ in 0 ..< 100 {
-                for i in 0 ..< itemCount {
-                    _ = store[BasicType64("key\(i)")]
-                }
-            }
-        }
+    // Retrieve multiple times - should always work
+    for _ in 0..<100 {
+      XCTAssertEqual(store[BasicType64(testKey)]?.value, 123)
     }
-
-    func testPerformanceLoadFactor50Percent() throws {
-        struct TestValue {
-            var value: Int
-        }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let itemCount = 128 // 50% of 256
+    // Reopen and verify
+    let store2 = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    XCTAssertEqual(store2[BasicType64(testKey)]?.value, 123)
+  }
 
-        // Prepopulate
-        for i in 0 ..< itemCount {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+  // MARK: - Load Factor Performance
 
-        measure {
-            for _ in 0 ..< 100 {
-                for i in 0 ..< itemCount {
-                    _ = store[BasicType64("key\(i)")]
-                }
-            }
-        }
+  func testPerformanceLoadFactor25Percent() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testPerformanceLoadFactor75Percent() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let itemCount = 64  // 25% of 256
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let itemCount = 192 // 75% of 256
+    // Prepopulate
+    for i in 0..<itemCount {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        // Prepopulate
-        for i in 0 ..< itemCount {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
+    measure {
+      for _ in 0..<100 {
+        for i in 0..<itemCount {
+          _ = store[BasicType64("key\(i)")]
         }
+      }
+    }
+  }
 
-        measure {
-            for _ in 0 ..< 100 {
-                for i in 0 ..< itemCount {
-                    _ = store[BasicType64("key\(i)")]
-                }
-            }
-        }
+  func testPerformanceLoadFactor50Percent() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testPerformanceLoadFactor90Percent() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let itemCount = 128  // 50% of 256
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let itemCount = 230 // 90% of 256
+    // Prepopulate
+    for i in 0..<itemCount {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        // Prepopulate
-        for i in 0 ..< itemCount {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
+    measure {
+      for _ in 0..<100 {
+        for i in 0..<itemCount {
+          _ = store[BasicType64("key\(i)")]
         }
+      }
+    }
+  }
 
-        measure {
-            for _ in 0 ..< 100 {
-                for i in 0 ..< itemCount {
-                    _ = store[BasicType64("key\(i)")]
-                }
-            }
-        }
+  func testPerformanceLoadFactor75Percent() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testPerformanceLoadFactor99Percent() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let itemCount = 192  // 75% of 256
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-        let itemCount = 253 // 99% of 256
+    // Prepopulate
+    for i in 0..<itemCount {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        // Prepopulate
-        for i in 0 ..< itemCount {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
+    measure {
+      for _ in 0..<100 {
+        for i in 0..<itemCount {
+          _ = store[BasicType64("key\(i)")]
         }
+      }
+    }
+  }
 
-        measure {
-            for _ in 0 ..< 100 {
-                for i in 0 ..< itemCount {
-                    _ = store[BasicType64("key\(i)")]
-                }
-            }
-        }
+  func testPerformanceLoadFactor90Percent() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Worst-Case Scenarios
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let itemCount = 230  // 90% of 256
+
+    // Prepopulate
+    for i in 0..<itemCount {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-    func testPerformanceWorstCaseProbeChain() throws {
-        struct TestValue {
-            var value: Int
+    measure {
+      for _ in 0..<100 {
+        for i in 0..<itemCount {
+          _ = store[BasicType64("key\(i)")]
         }
+      }
+    }
+  }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testPerformanceLoadFactor99Percent() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Use colliding keys to create maximum probe chain
-        for (index, key) in collidingKeys.enumerated() {
-            store[BasicType64(key)] = TestValue(value: index)
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let itemCount = 253  // 99% of 256
 
-        measure {
-            for _ in 0 ..< 1000 {
-                for key in collidingKeys {
-                    _ = store[BasicType64(key)]
-                }
-            }
-        }
+    // Prepopulate
+    for i in 0..<itemCount {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
     }
 
-    func testPerformanceManyTombstones() throws {
-        struct TestValue {
-            var value: Int
+    measure {
+      for _ in 0..<100 {
+        for i in 0..<itemCount {
+          _ = store[BasicType64("key\(i)")]
         }
+      }
+    }
+  }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  // MARK: - Worst-Case Scenarios
 
-        measure {
-            // Insert and delete to create tombstones
-            for i in 0 ..< 50 {
-                store[BasicType64("key\(i)")] = TestValue(value: i)
-            }
+  func testPerformanceWorstCaseProbeChain() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-            for i in 0 ..< 25 {
-                store[BasicType64("key\(i)")] = nil
-            }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-            // Now lookups have to traverse tombstones
-            for i in 25 ..< 50 {
-                _ = store[BasicType64("key\(i)")]
-            }
+    // Use colliding keys to create maximum probe chain
+    for (index, key) in collidingKeys.enumerated() {
+      store[BasicType64(key)] = TestValue(value: index)
+    }
 
-            // Clean up for next iteration
-            store.removeAll()
+    measure {
+      for _ in 0..<1000 {
+        for key in collidingKeys {
+          _ = store[BasicType64(key)]
         }
+      }
     }
+  }
 
-    func testPerformanceSequentialVsRandom() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testPerformanceManyTombstones() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    measure {
+      // Insert and delete to create tombstones
+      for i in 0..<50 {
+        store[BasicType64("key\(i)")] = TestValue(value: i)
+      }
 
-        // Sequential access
-        measure {
-            for i in 0 ..< 100 {
-                _ = store[BasicType64("key\(i)")]
-            }
-        }
+      for i in 0..<25 {
+        store[BasicType64("key\(i)")] = nil
+      }
+
+      // Now lookups have to traverse tombstones
+      for i in 25..<50 {
+        _ = store[BasicType64("key\(i)")]
+      }
+
+      // Clean up for next iteration
+      store.removeAll()
     }
+  }
 
-    func testPerformanceRandomAccess() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testPerformanceSequentialVsRandom() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        // Generate random sequence
-        let indices = (0 ..< 100).shuffled()
-
-        // Random access
-        measure {
-            for i in indices {
-                _ = store[BasicType64("key\(i)")]
-            }
-        }
+    // Sequential access
+    measure {
+      for i in 0..<100 {
+        _ = store[BasicType64("key\(i)")]
+      }
     }
+  }
 
-    // MARK: - String Length Performance
+  func testPerformanceRandomAccess() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-    func testPerformanceShortKeys() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        // Prepopulate with 1-5 char keys
-        for i in 0 ..< 100 {
-            store[BasicType64("k\(i)")] = TestValue(value: i)
-        }
+    // Generate random sequence
+    let indices = (0..<100).shuffled()
 
-        measure {
-            for i in 0 ..< 100 {
-                _ = store[BasicType64("k\(i)")]
-            }
-        }
+    // Random access
+    measure {
+      for i in indices {
+        _ = store[BasicType64("key\(i)")]
+      }
     }
+  }
 
-    func testPerformanceMediumKeys() throws {
-        struct TestValue {
-            var value: Int
-        }
+  // MARK: - String Length Performance
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testPerformanceShortKeys() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Prepopulate with ~25 char keys
-        for i in 0 ..< 100 {
-            store[BasicType64("medium_length_key_\(i)_test")] = TestValue(value: i)
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        measure {
-            for i in 0 ..< 100 {
-                _ = store[BasicType64("medium_length_key_\(i)_test")]
-            }
-        }
+    // Prepopulate with 1-5 char keys
+    for i in 0..<100 {
+      store[BasicType64("k\(i)")] = TestValue(value: i)
     }
 
-    func testPerformanceLongKeys() throws {
-        struct TestValue {
-            var value: Int
-        }
+    measure {
+      for i in 0..<100 {
+        _ = store[BasicType64("k\(i)")]
+      }
+    }
+  }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+  func testPerformanceMediumKeys() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Prepopulate with 64 char keys
-        for i in 0 ..< 100 {
-            let key = String(format: "very_long_key_name_with_lots_of_characters_item_%04d_end", i)
-            store[BasicType64(key)] = TestValue(value: i)
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        measure {
-            for i in 0 ..< 100 {
-                let key = String(format: "very_long_key_name_with_lots_of_characters_item_%04d_end", i)
-                _ = store[BasicType64(key)]
-            }
-        }
+    // Prepopulate with ~25 char keys
+    for i in 0..<100 {
+      store[BasicType64("medium_length_key_\(i)_test")] = TestValue(value: i)
     }
 
-    // MARK: - Persistence Performance
+    measure {
+      for i in 0..<100 {
+        _ = store[BasicType64("medium_length_key_\(i)_test")]
+      }
+    }
+  }
 
-    func testPerformanceWriteCloseReopen() throws {
-        struct TestValue {
-            var value: Int
-        }
+  func testPerformanceLongKeys() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        measure {
-            var store: KeyValueStore<BasicType64, TestValue>? = try? KeyValueStore(fileURL: url)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-            for i in 0 ..< 50 {
-                store?[BasicType64("key\(i)")] = TestValue(value: i)
-            }
+    // Prepopulate with 64 char keys
+    for i in 0..<100 {
+      let key = String(format: "very_long_key_name_with_lots_of_characters_item_%04d_end", i)
+      store[BasicType64(key)] = TestValue(value: i)
+    }
 
-            store = nil
-            store = try? KeyValueStore(fileURL: url)
+    measure {
+      for i in 0..<100 {
+        let key = String(format: "very_long_key_name_with_lots_of_characters_item_%04d_end", i)
+        _ = store[BasicType64(key)]
+      }
+    }
+  }
 
-            store = nil
+  // MARK: - Persistence Performance
 
-            try? FileManager.default.removeItem(at: url)
-        }
+  func testPerformanceWriteCloseReopen() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testPerformanceLargeBatchWrite() throws {
-        struct TestValue {
-            var value: Int
-        }
+    measure {
+      var store: KeyValueStore<BasicType64, TestValue>? = try? KeyValueStore(fileURL: url)
 
-        measure {
-            let store = try! KeyValueStore<BasicType64, TestValue>(fileURL: url)
+      for i in 0..<50 {
+        store?[BasicType64("key\(i)")] = TestValue(value: i)
+      }
 
-            for i in 0 ..< 128 {
-                store[BasicType64("key\(i)")] = TestValue(value: i)
-            }
+      store = nil
+      store = try? KeyValueStore(fileURL: url)
 
-            try? FileManager.default.removeItem(at: url)
-        }
+      store = nil
+
+      try? FileManager.default.removeItem(at: url)
     }
+  }
 
-    // MARK: - Additional Benchmarks
+  func testPerformanceLargeBatchWrite() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-    func testPerformanceContains() throws {
-        struct TestValue {
-            var value: Int
-        }
+    measure {
+      let store = try! KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+      for i in 0..<128 {
+        store[BasicType64("key\(i)")] = TestValue(value: i)
+      }
 
-        // Prepopulate
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+      try? FileManager.default.removeItem(at: url)
+    }
+  }
 
-        measure {
-            for i in 0 ..< 100 {
-                _ = store.contains(BasicType64("key\(i)"))
-            }
-        }
+  // MARK: - Additional Benchmarks
+
+  func testPerformanceContains() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testPerformanceRemoveAll() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Prepopulate
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        measure {
-            // Prepopulate
-            for i in 0 ..< 100 {
-                store[BasicType64("key\(i)")] = TestValue(value: i)
-            }
+    measure {
+      for i in 0..<100 {
+        _ = store.contains(BasicType64("key\(i)"))
+      }
+    }
+  }
 
-            store.removeAll()
-        }
+  func testPerformanceRemoveAll() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    // MARK: - Compaction Tests
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-    func testManualCompact() throws {
-        struct TestValue {
-            var value: Int
-        }
+    measure {
+      // Prepopulate
+      for i in 0..<100 {
+        store[BasicType64("key\(i)")] = TestValue(value: i)
+      }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+      store.removeAll()
+    }
+  }
 
-        // Fill store
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+  // MARK: - Compaction Tests
 
-        // Delete half to create tombstones
-        for i in 0 ..< 50 {
-            store[BasicType64("key\(i)")] = nil
-        }
+  func testManualCompact() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Compact should clean up tombstones
-        store.compact()
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Verify remaining items are still accessible
-        for i in 50 ..< 100 {
-            XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
-        }
+    // Fill store
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
     }
 
-    func testAutoCompactTriggered() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Delete half to create tombstones
+    for i in 0..<50 {
+      store[BasicType64("key\(i)")] = nil
+    }
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-
-        // Insert and delete many times to trigger auto-compact
-        for cycle in 0 ..< 10 {
-            for i in 0 ..< 20 {
-                store[BasicType64("temp\(i)")] = TestValue(value: cycle)
-            }
-            for i in 0 ..< 20 {
-                store[BasicType64("temp\(i)")] = nil
-            }
-        }
+    // Compact should clean up tombstones
+    store.compact()
 
-        // Store should still work correctly after auto-compaction
-        for i in 0 ..< 50 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    // Verify remaining items are still accessible
+    for i in 50..<100 {
+      XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
+    }
+  }
 
-        for i in 0 ..< 50 {
-            XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
-        }
+  func testAutoCompactTriggered() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testCompactPersistence() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+
+    // Insert and delete many times to trigger auto-compact
+    for cycle in 0..<10 {
+      for i in 0..<20 {
+        store[BasicType64("temp\(i)")] = TestValue(value: cycle)
+      }
+      for i in 0..<20 {
+        store[BasicType64("temp\(i)")] = nil
+      }
+    }
 
-        var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
+    // Store should still work correctly after auto-compaction
+    for i in 0..<50 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
+    }
 
-        // Create data with tombstones
-        for i in 0 ..< 80 {
-            store?[BasicType64("key\(i)")] = TestValue(value: i)
-        }
-        for i in 0 ..< 40 {
-            store?[BasicType64("key\(i)")] = nil
-        }
+    for i in 0..<50 {
+      XCTAssertEqual(store[BasicType64("key\(i)")]?.value, i)
+    }
+  }
 
-        // Compact
-        store?.compact()
+  func testCompactPersistence() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Close and reopen
-        store = nil
-        store = try KeyValueStore(fileURL: url)
+    var store: KeyValueStore<BasicType64, TestValue>? = try KeyValueStore(fileURL: url)
 
-        // Verify data survived compaction
-        for i in 40 ..< 80 {
-            XCTAssertEqual(store?[BasicType64("key\(i)")]?.value, i, "Failed for key\(i)")
-        }
+    // Create data with tombstones
+    for i in 0..<80 {
+      store?[BasicType64("key\(i)")] = TestValue(value: i)
     }
+    for i in 0..<40 {
+      store?[BasicType64("key\(i)")] = nil
+    }
 
-    func testCompactImprovesPerfomance() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Compact
+    store?.compact()
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Close and reopen
+    store = nil
+    store = try KeyValueStore(fileURL: url)
 
-        // Fill with items
-        for i in 0 ..< 100 {
-            store[BasicType64("key\(i)")] = TestValue(value: i)
-        }
+    // Verify data survived compaction
+    for i in 40..<80 {
+      XCTAssertEqual(store?[BasicType64("key\(i)")]?.value, i, "Failed for key\(i)")
+    }
+  }
 
-        // Delete many to create tombstones
-        for i in 0 ..< 80 {
-            store[BasicType64("key\(i)")] = nil
-        }
+  func testCompactImprovesPerfomance() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        // Measure lookup time with tombstones
-        let startWithTombstones = Date()
-        for _ in 0 ..< 1000 {
-            for i in 80 ..< 100 {
-                _ = store[BasicType64("key\(i)")]
-            }
-        }
-        let timeWithTombstones = Date().timeIntervalSince(startWithTombstones)
-
-        // Compact
-        store.compact()
-
-        // Measure lookup time after compact
-        let startAfterCompact = Date()
-        for _ in 0 ..< 1000 {
-            for i in 80 ..< 100 {
-                _ = store[BasicType64("key\(i)")]
-            }
-        }
-        let timeAfterCompact = Date().timeIntervalSince(startAfterCompact)
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        // Compaction should improve performance
-        // (This might not always be true due to variance, but it's a sanity check)
-        print("Time with tombstones: \(timeWithTombstones)s, after compact: \(timeAfterCompact)s")
+    // Fill with items
+    for i in 0..<100 {
+      store[BasicType64("key\(i)")] = TestValue(value: i)
     }
 
-    // MARK: - Memory and Stress Tests
+    // Delete many to create tombstones
+    for i in 0..<80 {
+      store[BasicType64("key\(i)")] = nil
+    }
 
-    func testStressRapidInsertDelete() throws {
-        struct TestValue {
-            var value: Int
-        }
+    // Measure lookup time with tombstones
+    let startWithTombstones = Date()
+    for _ in 0..<1000 {
+      for i in 80..<100 {
+        _ = store[BasicType64("key\(i)")]
+      }
+    }
+    let timeWithTombstones = Date().timeIntervalSince(startWithTombstones)
+
+    // Compact
+    store.compact()
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Measure lookup time after compact
+    let startAfterCompact = Date()
+    for _ in 0..<1000 {
+      for i in 80..<100 {
+        _ = store[BasicType64("key\(i)")]
+      }
+    }
+    let timeAfterCompact = Date().timeIntervalSince(startAfterCompact)
 
-        // Rapid insert/delete cycles
-        for cycle in 0 ..< 10 {
-            for i in 0 ..< 50 {
-                store[BasicType64("key\(i)")] = TestValue(value: cycle * 100 + i)
-            }
+    // Compaction should improve performance
+    // (This might not always be true due to variance, but it's a sanity check)
+    print("Time with tombstones: \(timeWithTombstones)s, after compact: \(timeAfterCompact)s")
+  }
 
-            for i in 0 ..< 50 {
-                store[BasicType64("key\(i)")] = nil
-            }
-        }
+  // MARK: - Memory and Stress Tests
+
+  func testStressRapidInsertDelete() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testStressFillClearRefill() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
+    // Rapid insert/delete cycles
+    for cycle in 0..<10 {
+      for i in 0..<50 {
+        store[BasicType64("key\(i)")] = TestValue(value: cycle * 100 + i)
+      }
 
-        for cycle in 0 ..< 5 {
-            // Fill
-            for i in 0 ..< 100 {
-                store[BasicType64("key\(i)")] = TestValue(value: cycle * 100 + i)
-            }
+      for i in 0..<50 {
+        store[BasicType64("key\(i)")] = nil
+      }
+    }
+  }
 
-            // Clear
-            store.removeAll()
-        }
+  func testStressFillClearRefill() throws {
+    struct TestValue {
+      var value: Int
     }
 
-    func testStressAlternatingOperations() throws {
-        struct TestValue {
-            var value: Int
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
-
-        for i in 0 ..< 1000 {
-            if i % 3 == 0 {
-                store[BasicType64("key\(i % 100)")] = TestValue(value: i)
-            } else if i % 3 == 1 {
-                _ = store[BasicType64("key\(i % 100)")]
-            } else {
-                _ = store.contains(BasicType64("key\(i % 100)"))
-            }
-        }
+    for cycle in 0..<5 {
+      // Fill
+      for i in 0..<100 {
+        store[BasicType64("key\(i)")] = TestValue(value: cycle * 100 + i)
+      }
+
+      // Clear
+      store.removeAll()
     }
+  }
 
-    func testValueAlignment() throws {
-        // Test with different alignment requirements
-        struct AlignedValue1 {
-            var a: Int8
-        }
+  func testStressAlternatingOperations() throws {
+    struct TestValue {
+      var value: Int
+    }
 
-        struct AlignedValue8 {
-            var a: Int64
-        }
+    let store = try KeyValueStore<BasicType64, TestValue>(fileURL: url)
 
-        struct AlignedValueMixed {
-            var a: Int8
-            var b: Int64
-            var c: Int32
-        }
+    for i in 0..<1000 {
+      if i % 3 == 0 {
+        store[BasicType64("key\(i % 100)")] = TestValue(value: i)
+      } else if i % 3 == 1 {
+        _ = store[BasicType64("key\(i % 100)")]
+      } else {
+        _ = store.contains(BasicType64("key\(i % 100)"))
+      }
+    }
+  }
+
+  func testValueAlignment() throws {
+    // Test with different alignment requirements
+    struct AlignedValue1 {
+      var a: Int8
+    }
 
-        let store1 = try KeyValueStore<BasicType64, AlignedValue1>(fileURL: url.appendingPathExtension("align1"))
-        store1["key"] = AlignedValue1(a: 42)
-        XCTAssertEqual(store1["key"]?.a, 42)
-        try? FileManager.default.removeItem(at: url.appendingPathExtension("align1"))
-
-        let store8 = try KeyValueStore<BasicType64, AlignedValue8>(fileURL: url.appendingPathExtension("align8"))
-        store8["key"] = AlignedValue8(a: 12_345_678)
-        XCTAssertEqual(store8["key"]?.a, 12_345_678)
-        try? FileManager.default.removeItem(at: url.appendingPathExtension("align8"))
-
-        let storeMixed = try KeyValueStore<BasicType64, AlignedValueMixed>(fileURL: url.appendingPathExtension("mixed"))
-        storeMixed["key"] = AlignedValueMixed(a: 1, b: 2, c: 3)
-        let val = storeMixed["key"]
-        XCTAssertEqual(val?.a, 1)
-        XCTAssertEqual(val?.b, 2)
-        XCTAssertEqual(val?.c, 3)
-        try? FileManager.default.removeItem(at: url.appendingPathExtension("mixed"))
+    struct AlignedValue8 {
+      var a: Int64
     }
+
+    struct AlignedValueMixed {
+      var a: Int8
+      var b: Int64
+      var c: Int32
+    }
+
+    let store1 = try KeyValueStore<BasicType64, AlignedValue1>(
+      fileURL: url.appendingPathExtension("align1"))
+    store1["key"] = AlignedValue1(a: 42)
+    XCTAssertEqual(store1["key"]?.a, 42)
+    try? FileManager.default.removeItem(at: url.appendingPathExtension("align1"))
+
+    let store8 = try KeyValueStore<BasicType64, AlignedValue8>(
+      fileURL: url.appendingPathExtension("align8"))
+    store8["key"] = AlignedValue8(a: 12_345_678)
+    XCTAssertEqual(store8["key"]?.a, 12_345_678)
+    try? FileManager.default.removeItem(at: url.appendingPathExtension("align8"))
+
+    let storeMixed = try KeyValueStore<BasicType64, AlignedValueMixed>(
+      fileURL: url.appendingPathExtension("mixed"))
+    storeMixed["key"] = AlignedValueMixed(a: 1, b: 2, c: 3)
+    let val = storeMixed["key"]
+    XCTAssertEqual(val?.a, 1)
+    XCTAssertEqual(val?.b, 2)
+    XCTAssertEqual(val?.c, 3)
+    try? FileManager.default.removeItem(at: url.appendingPathExtension("mixed"))
+  }
 }
